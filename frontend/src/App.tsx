@@ -220,6 +220,8 @@ export function App() {
     }
   };
 
+  const isTryyNexus = currentUser?.username?.toLowerCase() === 'tryy_nexus';
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
       {/* Top Navigation Bar with Safe Area Top Support */}
@@ -286,15 +288,17 @@ export function App() {
 
             {/* Desktop Quick Actions */}
             <div className="flex items-center gap-2">
-              <button
-                onClick={handleEnrichHVCForMonth}
-                disabled={isEnrichingHvc}
-                className="px-3 py-1.5 rounded-lg bg-indigo-950/60 hover:bg-indigo-900/60 border border-indigo-500/30 text-indigo-300 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
-                title="Cerca copertine e codici mancanti su HoVistoCose"
-              >
-                {isEnrichingHvc ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 text-indigo-400" />}
-                <span>Auto-Arricchisci HVC</span>
-              </button>
+              {isTryyNexus && (
+                <button
+                  onClick={handleEnrichHVCForMonth}
+                  disabled={isEnrichingHvc}
+                  className="px-3 py-1.5 rounded-lg bg-indigo-950/60 hover:bg-indigo-900/60 border border-indigo-500/30 text-indigo-300 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                  title="Cerca copertine e codici mancanti su HoVistoCose"
+                >
+                  {isEnrichingHvc ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 text-indigo-400" />}
+                  <span>Auto-Arricchisci HVC</span>
+                </button>
+              )}
 
               <button
                 onClick={() => setIsImportExportOpen(true)}
@@ -485,17 +489,19 @@ export function App() {
               Statistiche & Vendite
             </button>
 
-            <button
-              onClick={() => setActiveTab('orders')}
-              className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-2 transition cursor-pointer shrink-0 ${
-                activeTab === 'orders'
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-              }`}
-            >
-              <Package className="w-3.5 h-3.5" />
-              Preordini HVC & Store
-            </button>
+            {isTryyNexus && (
+              <button
+                onClick={() => setActiveTab('orders')}
+                className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-2 transition cursor-pointer shrink-0 ${
+                  activeTab === 'orders'
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                }`}
+              >
+                <Package className="w-3.5 h-3.5" />
+                Preordini HVC & Store
+              </button>
+            )}
 
             <button
               onClick={() => setActiveTab('readings')}
@@ -604,15 +610,27 @@ export function App() {
           <Plus className="w-5 h-5 stroke-2" />
         </button>
 
-        <button
-          onClick={() => setActiveTab('orders')}
-          className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${
-            activeTab === 'orders' ? 'text-indigo-400' : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Package className="w-4 h-4" />
-          <span>Preordini</span>
-        </button>
+        {isTryyNexus ? (
+          <button
+            onClick={() => setActiveTab('orders')}
+            className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+              activeTab === 'orders' ? 'text-indigo-400' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Package className="w-4 h-4" />
+            <span>Preordini</span>
+          </button>
+        ) : (
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+              activeTab === 'dashboard' ? 'text-indigo-400' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <PieChart className="w-4 h-4" />
+            <span>Statistiche</span>
+          </button>
+        )}
 
         <button
           onClick={() => setActiveTab('readings')}

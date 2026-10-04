@@ -149,6 +149,18 @@ async function executeHvcQuery(cleanQ) {
       const pubMatch = body.match(/<a href="\/publisher\/[^"]*"[^>]*>([\s\S]*?)<\/a>/i);
       const publisher = pubMatch ? pubMatch[1].replace(/<[^>]+>/g, '').trim() : null;
 
+      // Extract price from HVC
+      let hvcPrice = null;
+      let coverPriceVal = null;
+      const hvcPriceMatch = body.match(/Prezzo\s+HoVistoCose:\s*(?:EUR|€)?\s*([0-9]+[.,][0-9]{2})/i);
+      if (hvcPriceMatch) {
+        hvcPrice = parseFloat(hvcPriceMatch[1].replace(',', '.'));
+      }
+      const covPriceMatch = body.match(/Prezzo\s+di\s+copertina:\s*(?:EUR|€|USD|\$)?\s*([0-9]+[.,][0-9]{2})/i);
+      if (covPriceMatch) {
+        coverPriceVal = parseFloat(covPriceMatch[1].replace(',', '.'));
+      }
+
       const coverUrl = imgMap[idx] || null;
 
       results.push({
@@ -157,6 +169,8 @@ async function executeHvcQuery(cleanQ) {
         publisher: publisher || 'Panini / DC / Marvel',
         ean: ean,
         isbn: ean,
+        price: hvcPrice || coverPriceVal || null,
+        coverPrice: coverPriceVal || hvcPrice || null,
         coverUrl,
         thumbnailUrl: coverUrl
       });
@@ -299,6 +313,10 @@ async function searchGoogleBooks(query, apiKey = null) {
       let img = thumbs.thumbnail || thumbs.smallThumbnail || null;
       if (img && img.startsWith('http:')) img = img.replace('http:', 'https:');
 
+      const saleInfo = item.saleInfo || {};
+      const retailPrice = saleInfo.retailPrice || saleInfo.listPrice || null;
+      const gbPrice = retailPrice && retailPrice.amount ? Number(retailPrice.amount) : null;
+
       return {
         source: 'Google Books',
         title: info.title,
@@ -307,6 +325,8 @@ async function searchGoogleBooks(query, apiKey = null) {
         year: info.publishedDate ? info.publishedDate.slice(0, 4) : null,
         isbn: isbn13 ? isbn13.identifier : (isbn10 ? isbn10.identifier : null),
         ean: isbn13 ? isbn13.identifier : null,
+        price: gbPrice,
+        coverPrice: gbPrice,
         coverUrl: img,
         thumbnailUrl: img
       };

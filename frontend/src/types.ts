@@ -177,6 +177,8 @@ export interface MetadataSearchResult {
   year?: string;
   isbn?: string;
   ean?: string;
+  price?: number | null;
+  coverPrice?: number | null;
   coverUrl?: string;
   thumbnailUrl?: string;
 }

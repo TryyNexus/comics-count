@@ -136,6 +136,17 @@ export const AddEditComicModal: React.FC<AddEditComicModalProps> = ({
     if (res.isbn && !isbn) {
       setIsbn(res.isbn);
     }
+    // Auto-fill price if found and current price is 0 or empty
+    if (res.price !== undefined && res.price !== null) {
+      if (!purchasePrice || purchasePrice === '0' || purchasePrice === '0.00') {
+        setPurchasePrice(String(res.price));
+      }
+    }
+    if (res.coverPrice !== undefined && res.coverPrice !== null) {
+      if (!coverPrice || coverPrice === '0' || coverPrice === '0.00') {
+        setCoverPrice(String(res.coverPrice));
+      }
+    }
     // If publisher is not selected, match with existing
     if (!publisherId && res.publisher) {
       const match = publishers.find(p => p.name.toLowerCase().includes(res.publisher!.toLowerCase()));
@@ -383,7 +394,14 @@ export const AddEditComicModal: React.FC<AddEditComicModalProps> = ({
                             </div>
                             <div className="text-[10px] text-slate-400 flex justify-between items-center mt-1">
                               <span className="font-medium text-slate-300">{res.source}</span>
-                              {res.ean && <span className="font-mono text-[9px] text-indigo-300 font-bold">EAN ✓</span>}
+                              <div className="flex items-center gap-1">
+                                {(res.price || res.coverPrice) && (
+                                  <span className="font-mono text-[9px] text-emerald-400 font-bold px-1 py-0.2 rounded bg-emerald-500/10 border border-emerald-500/20">
+                                    €{Number(res.price || res.coverPrice).toFixed(2)}
+                                  </span>
+                                )}
+                                {res.ean && <span className="font-mono text-[9px] text-indigo-300 font-bold">EAN ✓</span>}
+                              </div>
                             </div>
                           </div>
                         </div>

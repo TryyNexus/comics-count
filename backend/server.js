@@ -894,15 +894,21 @@ app.post('/api/comics/:id/enrich-hvc', authMiddleware, async (req, res) => {
       if (best.coverUrl) {
         localCover = await downloadAndCacheCover(best.coverUrl, comic.id);
       }
+
+      const foundPrice = best.price || best.coverPrice || null;
+      const foundCoverPrice = best.coverPrice || best.price || null;
+
       db.prepare(`
         UPDATE comics SET
           isbn = COALESCE(?, isbn),
           ean = COALESCE(?, ean),
           cover_url = COALESCE(?, cover_url),
           local_cover_path = COALESCE(?, local_cover_path),
+          cover_price = CASE WHEN (cover_price = 0 OR cover_price IS NULL) AND ? IS NOT NULL THEN ? ELSE cover_price END,
+          purchase_price = CASE WHEN (purchase_price = 0 OR purchase_price IS NULL) AND ? IS NOT NULL THEN ? ELSE purchase_price END,
           notes = CASE 
-            WHEN ? IS NOT NULL AND (notes IS NULL OR notes NOT LIKE '%Prezzo originale:%')
-            THEN COALESCE(notes || ' | ', '') || 'Prezzo originale: ' || ?
+            WHEN ? IS NOT NULL AND (notes IS NULL OR notes NOT LIKE '%Prezzo di listino:%')
+            THEN COALESCE(notes || ' | ', '') || 'Prezzo di listino: €' || ?
             ELSE notes 
           END,
           updated_at = datetime('now')
@@ -912,8 +918,12 @@ app.post('/api/comics/:id/enrich-hvc', authMiddleware, async (req, res) => {
         best.ean || best.isbn,
         best.coverUrl,
         localCover,
-        best.originalPrice,
-        best.originalPrice,
+        foundCoverPrice,
+        foundCoverPrice,
+        foundPrice,
+        foundPrice,
+        foundPrice,
+        foundPrice,
         comic.id,
         userId
       );
@@ -921,7 +931,7 @@ app.post('/api/comics/:id/enrich-hvc', authMiddleware, async (req, res) => {
       const updated = db.prepare('SELECT * FROM comics WHERE id = ? AND user_id = ?').get(comic.id, userId);
       return res.json({ success: true, enriched: true, comic: updated });
     }
-    res.json({ success: true, enriched: false, message: 'Nessun metadato trovato su HoVistoCose' });
+    res.json({ success: true, enriched: false, message: 'Nessun metadato trovato' });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -931,7 +941,7 @@ app.post('/api/comics/batch-enrich-hvc', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
     const { year, month } = req.body;
-    let query = 'SELECT * FROM comics WHERE user_id = ? AND (cover_url IS NULL OR local_cover_path IS NULL OR isbn IS NULL)';
+    let query = 'SELECT * FROM comics WHERE user_id = ? AND (cover_url IS NULL OR local_cover_path IS NULL OR isbn IS NULL OR purchase_price = 0 OR purchase_price IS NULL)';
     const params = [userId];
     if (year) { query += ' AND year = ?'; params.push(year); }
     if (month) { query += ' AND month = ?'; params.push(month); }
@@ -948,15 +958,31 @@ app.post('/api/comics/batch-enrich-hvc', authMiddleware, async (req, res) => {
           if (best.coverUrl) {
             localCover = await downloadAndCacheCover(best.coverUrl, c.id);
           }
+          const foundPrice = best.price || best.coverPrice || null;
+          const foundCoverPrice = best.coverPrice || best.price || null;
+
           db.prepare(`
             UPDATE comics SET
               isbn = COALESCE(?, isbn),
               ean = COALESCE(?, ean),
               cover_url = COALESCE(?, cover_url),
               local_cover_path = COALESCE(?, local_cover_path),
+              cover_price = CASE WHEN (cover_price = 0 OR cover_price IS NULL) AND ? IS NOT NULL THEN ? ELSE cover_price END,
+              purchase_price = CASE WHEN (purchase_price = 0 OR purchase_price IS NULL) AND ? IS NOT NULL THEN ? ELSE purchase_price END,
               updated_at = datetime('now')
             WHERE id = ? AND user_id = ?
-          `).run(best.isbn || best.ean, best.ean || best.isbn, best.coverUrl, localCover, c.id, userId);
+          `).run(
+            best.isbn || best.ean,
+            best.ean || best.isbn,
+            best.coverUrl,
+            localCover,
+            foundCoverPrice,
+            foundCoverPrice,
+            foundPrice,
+            foundPrice,
+            c.id,
+            userId
+          );
           enriched++;
         }
         await new Promise(r => setTimeout(r, 400));
