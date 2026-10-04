@@ -38,8 +38,8 @@ export function getComicColumn(c: Comic): CategoryColumn {
 
   // 1. Ordini / Usato / HVC Total Row with price
   if (title.startsWith('hvc ordine') || chan.includes('online') || chan.includes('usato') || pName.includes('ordini')) {
-    // If it's an HVC single comic (price 0) and not the total row, it must NOT go to ordini!
-    if (chan.includes('hvc') && !title.startsWith('hvc ordine') && (c.purchase_price === 0 || !c.purchase_price)) {
+    // If it's an HVC single comic and not the total row, it belongs to its publisher column (DC, Marvel, Altro)
+    if (chan.includes('hvc') && !title.startsWith('hvc ordine')) {
       // route to DC, Marvel or Altro below
     } else {
       return 'ordini';
