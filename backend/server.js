@@ -112,6 +112,38 @@ app.post('/api/auth/login', (req, res) => {
   }
 });
 
+app.post('/api/auth/reset-password', (req, res) => {
+  try {
+    const { username, email, newPassword } = req.body;
+    if (!username || !email || !newPassword) {
+      return res.status(400).json({ error: 'Inserisci Username, Email associata e Nuova Password' });
+    }
+
+    if (newPassword.length < 4) {
+      return res.status(400).json({ error: 'La nuova password deve avere almeno 4 caratteri' });
+    }
+
+    const cleanUsername = username.trim();
+    const cleanEmail = email.trim();
+
+    const user = db.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE AND email = ? COLLATE NOCASE')
+      .get(cleanUsername, cleanEmail);
+
+    if (!user) {
+      return res.status(404).json({ error: 'Nessun account trovato corrispondente a questo Username ed Email' });
+    }
+
+    const salt = bcrypt.genSaltSync(10);
+    const hash = bcrypt.hashSync(newPassword, salt);
+
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, user.id);
+
+    res.json({ success: true, message: 'Password aggiornata con successo! Ora puoi effettuare l\'accesso.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/auth/me', authMiddleware, (req, res) => {
   res.json({ user: req.user });
 });

@@ -61,6 +61,7 @@ export function App() {
   const [isImportExportOpen, setIsImportExportOpen] = useState(false);
   const [isMobileModalOpen, setIsMobileModalOpen] = useState(false);
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
   // Check login on startup
   useEffect(() => {
@@ -318,8 +319,8 @@ export function App() {
                 <span>Nuovo</span>
               </button>
 
-              {/* User badge & Logout */}
-              {currentUser && (
+              {/* User badge & Logout OR Login Button */}
+              {currentUser ? (
                 <div className="flex items-center gap-2 pl-2 border-l border-slate-800 ml-1">
                   <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800/80 border border-slate-700/60 text-xs text-slate-200">
                     <UserIcon className="w-3.5 h-3.5 text-indigo-400" />
@@ -333,6 +334,14 @@ export function App() {
                     <LogOut className="w-3.5 h-3.5" />
                   </button>
                 </div>
+              ) : (
+                <button
+                  onClick={() => setIsAuthModalOpen(true)}
+                  className="px-3 py-1.5 rounded-lg bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-500/40 text-indigo-300 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ml-1"
+                >
+                  <UserIcon className="w-3.5 h-3.5" />
+                  <span>Accedi</span>
+                </button>
               )}
             </div>
           </div>
@@ -379,7 +388,7 @@ export function App() {
                 <span>Nuovo</span>
               </button>
 
-              {currentUser && (
+              {currentUser ? (
                 <button
                   onClick={handleLogout}
                   className="p-2 rounded-xl bg-slate-800 hover:bg-rose-950/60 hover:text-rose-400 border border-slate-700 text-slate-400 transition cursor-pointer"
@@ -387,6 +396,15 @@ export function App() {
                   aria-label="Disconnetti"
                 >
                   <LogOut className="w-4 h-4" />
+                </button>
+              ) : (
+                <button
+                  onClick={() => setIsAuthModalOpen(true)}
+                  className="p-2 rounded-xl bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-500/40 text-indigo-300 transition cursor-pointer"
+                  title="Accedi"
+                  aria-label="Accedi"
+                >
+                  <UserIcon className="w-4 h-4" />
                 </button>
               )}
             </div>
@@ -647,11 +665,15 @@ export function App() {
         years={YEARS}
       />
 
-      {/* Authentication Modal when not logged in */}
-      {!currentUser && !isAuthChecking && (
+      {/* Authentication Modal (shown automatically if not logged in or when requested via button) */}
+      {(!currentUser && !isAuthChecking || isAuthModalOpen) && (
         <AuthModal
           onSuccess={(user) => {
             setCurrentUser(user);
+            setIsAuthModalOpen(false);
+          }}
+          onClose={() => {
+            setIsAuthModalOpen(false);
           }}
         />
       )}

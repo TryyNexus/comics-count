@@ -82,6 +82,19 @@ export const api = {
     return data;
   },
 
+  resetPassword: async (username: string, email: string, newPassword: string): Promise<{ success: boolean; message: string }> => {
+    const res = await fetch(`${API_BASE}/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, email, newPassword })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Errore durante il recupero password');
+    }
+    return res.json();
+  },
+
   getMe: async (): Promise<User | null> => {
     const token = authStorage.getToken();
     if (!token) return null;
