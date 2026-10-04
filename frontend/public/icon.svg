@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4f46e5" />
+      <stop offset="50%" stop-color="#6366f1" />
+      <stop offset="100%" stop-color="#9333ea" />
+    </linearGradient>
+    <linearGradient id="bookGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#f1f5f9" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#000000" flood-opacity="0.35" />
+    </filter>
+  </defs>
+
+  <!-- Background squircle -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+
+  <!-- Inner glowing circle / badge accent -->
+  <circle cx="256" cy="256" r="180" fill="white" fill-opacity="0.06" />
+
+  <!-- Comic Book pages / Icon in center -->
+  <g filter="url(#shadow)" transform="translate(106, 126)">
+    <!-- Back cover / comic stack effect -->
+    <path d="M 15 250 C 70 235, 140 240, 150 250 C 160 240, 230 235, 285 250 L 285 45 C 230 30, 160 35, 150 45 C 140 35, 70 30, 15 45 Z" fill="#312e81" opacity="0.5" />
+    <path d="M 8 245 C 65 230, 140 235, 150 245 C 160 235, 235 230, 292 245 L 292 38 C 235 23, 160 28, 150 38 C 140 28, 65 23, 8 38 Z" fill="#4338ca" opacity="0.7" />
+
+    <!-- Main Open Comic Book Pages -->
+    <!-- Left page -->
+    <path d="M 0 240 C 60 224, 140 230, 150 240 L 150 30 C 140 20, 60 14, 0 30 Z" fill="url(#bookGrad)" />
+    <!-- Right page -->
+    <path d="M 300 240 C 240 224, 160 230, 150 240 L 150 30 C 160 20, 240 14, 300 30 Z" fill="url(#bookGrad)" />
+
+    <!-- Spine -->
+    <path d="M 148 30 L 152 30 L 152 240 L 148 240 Z" fill="#cbd5e1" />
+
+    <!-- Comic panels representation on left page -->
+    <rect x="25" y="52" width="105" height="48" rx="6" fill="#e0e7ff" stroke="#a5b4fc" stroke-width="2" />
+    <rect x="25" y="112" width="50" height="52" rx="6" fill="#e0e7ff" stroke="#a5b4fc" stroke-width="2" />
+    <rect x="80" y="112" width="50" height="52" rx="6" fill="#e0e7ff" stroke="#a5b4fc" stroke-width="2" />
+    <rect x="25" y="174" width="105" height="42" rx="6" fill="#e0e7ff" stroke="#a5b4fc" stroke-width="2" />
+
+    <!-- Comic panels representation on right page -->
+    <rect x="170" y="52" width="105" height="68" rx="6" fill="#fed7aa" stroke="#fdba74" stroke-width="2" />
+    <rect x="170" y="132" width="105" height="84" rx="6" fill="#ddd6fe" stroke="#c4b5fd" stroke-width="2" />
+
+    <!-- Sparkle star / action symbol -->
+    <path d="M 150 5 L 154 18 L 167 22 L 154 26 L 150 39 L 146 26 L 133 22 L 146 18 Z" fill="#fbbf24" />
+  </g>
+</svg>
