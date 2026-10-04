@@ -1,19 +1,6 @@
-const CACHE_NAME = 'comics-count-v1';
-const ASSETS_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/icon.svg',
-  '/icon-192.png',
-  '/icon-512.png'
-];
+const CACHE_NAME = 'comics-count-v2';
 
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE);
-    })
-  );
+self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
@@ -38,9 +25,18 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Network-First strategy: always fetch fresh bundle, fallback to cache only if offline
   event.respondWith(
-    caches.match(event.request).then((response) => {
-      return response || fetch(event.request).catch(() => caches.match('/'));
-    })
+    fetch(event.request)
+      .then((response) => {
+        if (response && response.status === 200 && event.request.method === 'GET') {
+          const responseClone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseClone);
+          });
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
