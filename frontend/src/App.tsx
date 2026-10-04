@@ -62,6 +62,7 @@ export function App() {
   const [isMobileModalOpen, setIsMobileModalOpen] = useState(false);
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isAuthModalDismissed, setIsAuthModalDismissed] = useState(false);
 
   // Check login on startup
   useEffect(() => {
@@ -82,6 +83,8 @@ export function App() {
   const handleLogout = () => {
     api.logout();
     setCurrentUser(null);
+    setIsAuthModalDismissed(false);
+    setIsAuthModalOpen(true);
     setComics([]);
     setSummary(null);
   };
@@ -665,15 +668,17 @@ export function App() {
         years={YEARS}
       />
 
-      {/* Authentication Modal (shown automatically if not logged in or when requested via button) */}
-      {(!currentUser && !isAuthChecking || isAuthModalOpen) && (
+      {/* Authentication Modal */}
+      {(!currentUser && !isAuthChecking && !isAuthModalDismissed || isAuthModalOpen) && (
         <AuthModal
           onSuccess={(user) => {
             setCurrentUser(user);
             setIsAuthModalOpen(false);
+            setIsAuthModalDismissed(false);
           }}
           onClose={() => {
             setIsAuthModalOpen(false);
+            setIsAuthModalDismissed(true);
           }}
         />
       )}
