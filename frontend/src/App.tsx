@@ -175,14 +175,9 @@ export function App() {
   const handleEnrichHVCForMonth = async () => {
     setIsEnrichingHvc(true);
     try {
-      const res = await fetch('/api/comics/enrich-hvc-batch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ year: currentYear, month: currentMonth, limit: 100 })
-      });
-      const data = await res.json();
+      const data = await api.batchEnrichHVC(currentYear, currentMonth);
       if (data.success) {
-        alert(`Arricchimento HoVistoCose completato!\nAggiornati con successo ${data.enriched} fumetti HVC su ${data.processed} con copertine e codici a barre.`);
+        alert(`Arricchimento HoVistoCose completato!\nAggiornati con successo ${data.enriched} fumetti HVC su ${data.processed} con copertine, prezzi e codici.`);
         loadComicsAndSummary();
       } else {
         alert('Errore durante l\'arricchimento batch');

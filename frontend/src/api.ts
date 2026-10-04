@@ -447,5 +447,19 @@ export const api = {
     const res = await fetch(`${API_BASE}/tunnel/start`, { method: 'POST' });
     if (!res.ok) throw new Error('Errore durante l\'avvio del tunnel');
     return res.json();
+  },
+
+  // Batch Enrich HVC
+  batchEnrichHVC: async (year?: string, month?: string): Promise<{ success: boolean; processed: number; enriched: number }> => {
+    const res = await fetch(`${API_BASE}/comics/batch-enrich-hvc`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ year, month })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Errore durante l\'arricchimento batch');
+    }
+    return res.json();
   }
 };
