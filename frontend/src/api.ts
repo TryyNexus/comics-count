@@ -9,12 +9,102 @@ import {
   PublisherBreakdownItem,
   MonthlyTrendItem,
   YearlyComparisonItem,
-  MetadataSearchResult
+  MetadataSearchResult,
+  User,
+  AuthResponse
 } from './types';
 
 const API_BASE = '/api';
 
+const TOKEN_KEY = 'comics_count_token';
+const USER_KEY = 'comics_count_user';
+
+export const authStorage = {
+  getToken: (): string | null => localStorage.getItem(TOKEN_KEY),
+  setToken: (token: string) => localStorage.setItem(TOKEN_KEY, token),
+  removeToken: () => {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+  },
+  getUser: (): User | null => {
+    const raw = localStorage.getItem(USER_KEY);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  },
+  setUser: (user: User) => localStorage.setItem(USER_KEY, JSON.stringify(user))
+};
+
+function authHeaders(isJson = true): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (isJson) headers['Content-Type'] = 'application/json';
+  const token = authStorage.getToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 export const api = {
+  // Authentication
+  login: async (username: string, password: string): Promise<AuthResponse> => {
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Credenziali non valide');
+    }
+    const data: AuthResponse = await res.json();
+    authStorage.setToken(data.token);
+    authStorage.setUser(data.user);
+    return data;
+  },
+
+  register: async (username: string, password: string, email?: string, displayName?: string): Promise<AuthResponse> => {
+    const res = await fetch(`${API_BASE}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password, email, displayName })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Errore nella registrazione');
+    }
+    const data: AuthResponse = await res.json();
+    authStorage.setToken(data.token);
+    authStorage.setUser(data.user);
+    return data;
+  },
+
+  getMe: async (): Promise<User | null> => {
+    const token = authStorage.getToken();
+    if (!token) return null;
+    try {
+      const res = await fetch(`${API_BASE}/auth/me`, {
+        headers: authHeaders()
+      });
+      if (!res.ok) {
+        authStorage.removeToken();
+        return null;
+      }
+      const data = await res.json();
+      authStorage.setUser(data.user);
+      return data.user;
+    } catch {
+      return null;
+    }
+  },
+
+  logout: () => {
+    authStorage.removeToken();
+  },
+
   // Comics
   getComics: async (params?: {
     year?: string;
@@ -32,7 +122,9 @@ export const api = {
         }
       });
     }
-    const res = await fetch(`${API_BASE}/comics?${q.toString()}`);
+    const res = await fetch(`${API_BASE}/comics?${q.toString()}`, {
+      headers: authHeaders()
+    });
     if (!res.ok) throw new Error('Errore nel caricamento dei fumetti');
     return res.json();
   },
@@ -41,7 +133,9 @@ export const api = {
     const q = new URLSearchParams();
     if (params?.category) q.append('category', params.category);
     if (params?.search) q.append('search', params.search);
-    const res = await fetch(`${API_BASE}/comics/purchased?${q.toString()}`);
+    const res = await fetch(`${API_BASE}/comics/purchased?${q.toString()}`, {
+      headers: authHeaders()
+    });
     if (!res.ok) throw new Error('Errore nel caricamento dei fumetti acquistati');
     return res.json();
   },
@@ -49,7 +143,7 @@ export const api = {
   createComic: async (comic: Partial<Comic>): Promise<Comic> => {
     const res = await fetch(`${API_BASE}/comics`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(),
       body: JSON.stringify(comic)
     });
     if (!res.ok) {
@@ -62,7 +156,7 @@ export const api = {
   updateComic: async (id: number, comic: Partial<Comic>): Promise<Comic> => {
     const res = await fetch(`${API_BASE}/comics/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(),
       body: JSON.stringify(comic)
     });
     if (!res.ok) throw new Error('Errore nell\'aggiornamento del fumetto');
@@ -72,14 +166,17 @@ export const api = {
   updateComicStatus: async (id: number, status: string): Promise<void> => {
     const res = await fetch(`${API_BASE}/comics/${id}/status`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(),
       body: JSON.stringify({ status })
     });
     if (!res.ok) throw new Error('Errore nell\'aggiornamento dello stato');
   },
 
   deleteComic: async (id: number): Promise<void> => {
-    const res = await fetch(`${API_BASE}/comics/${id}`, { method: 'DELETE' });
+    const res = await fetch(`${API_BASE}/comics/${id}`, { 
+      method: 'DELETE',
+      headers: authHeaders()
+    });
     if (!res.ok) throw new Error('Errore nella cancellazione del fumetto');
   },
 
@@ -102,7 +199,9 @@ export const api = {
 
   // Statistics
   getSummary: async (year: string, month: string): Promise<MonthlySummary> => {
-    const res = await fetch(`${API_BASE}/stats/summary?year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}`);
+    const res = await fetch(`${API_BASE}/stats/summary?year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}`, {
+      headers: authHeaders()
+    });
     if (!res.ok) throw new Error('Errore nel caricamento del riepilogo');
     return res.json();
   },
@@ -110,19 +209,25 @@ export const api = {
   getPublisherBreakdown: async (year: string, month?: string): Promise<{ rows: PublisherBreakdownItem[]; grandTotal: number }> => {
     let url = `${API_BASE}/stats/publishers?year=${encodeURIComponent(year)}`;
     if (month && month !== 'all') url += `&month=${encodeURIComponent(month)}`;
-    const res = await fetch(url);
+    const res = await fetch(url, {
+      headers: authHeaders()
+    });
     if (!res.ok) throw new Error('Errore nel caricamento del breakdown editori');
     return res.json();
   },
 
   getMonthlyTrends: async (year: string): Promise<MonthlyTrendItem[]> => {
-    const res = await fetch(`${API_BASE}/stats/monthly-trends?year=${encodeURIComponent(year)}`);
+    const res = await fetch(`${API_BASE}/stats/monthly-trends?year=${encodeURIComponent(year)}`, {
+      headers: authHeaders()
+    });
     if (!res.ok) throw new Error('Errore nel caricamento dei trend mensili');
     return res.json();
   },
 
   getYearlyComparison: async (): Promise<YearlyComparisonItem[]> => {
-    const res = await fetch(`${API_BASE}/stats/yearly-comparison`);
+    const res = await fetch(`${API_BASE}/stats/yearly-comparison`, {
+      headers: authHeaders()
+    });
     if (!res.ok) throw new Error('Errore nel caricamento del confronto annuale');
     return res.json();
   },
@@ -131,7 +236,7 @@ export const api = {
   setBudget: async (year: string, month: string, budget_amount: number): Promise<void> => {
     const res = await fetch(`${API_BASE}/budgets`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(),
       body: JSON.stringify({ year, month, budget_amount })
     });
     if (!res.ok) throw new Error('Errore nel salvataggio del budget');
@@ -142,7 +247,9 @@ export const api = {
     let url = `${API_BASE}/sales?`;
     if (year) url += `year=${encodeURIComponent(year)}&`;
     if (month) url += `month=${encodeURIComponent(month)}&`;
-    const res = await fetch(url);
+    const res = await fetch(url, {
+      headers: authHeaders()
+    });
     if (!res.ok) throw new Error('Errore nel caricamento delle vendite/rimborsi');
     return res.json();
   },
@@ -150,7 +257,7 @@ export const api = {
   createSale: async (sale: Partial<SaleRefund>): Promise<SaleRefund> => {
     const res = await fetch(`${API_BASE}/sales`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(),
       body: JSON.stringify(sale)
     });
     if (!res.ok) throw new Error('Errore nella registrazione della vendita/rimborso');
@@ -158,7 +265,10 @@ export const api = {
   },
 
   deleteSale: async (id: number): Promise<void> => {
-    const res = await fetch(`${API_BASE}/sales/${id}`, { method: 'DELETE' });
+    const res = await fetch(`${API_BASE}/sales/${id}`, { 
+      method: 'DELETE',
+      headers: authHeaders()
+    });
     if (!res.ok) throw new Error('Errore nella cancellazione');
   },
 
@@ -168,7 +278,9 @@ export const api = {
     if (year && year !== 'all') {
       url += `?year=${encodeURIComponent(year)}`;
     }
-    const res = await fetch(url);
+    const res = await fetch(url, {
+      headers: authHeaders()
+    });
     if (!res.ok) throw new Error('Errore nel caricamento degli ordini');
     return res.json();
   },
@@ -176,7 +288,7 @@ export const api = {
   createOrder: async (order: Partial<Order>): Promise<Order> => {
     const res = await fetch(`${API_BASE}/orders`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(),
       body: JSON.stringify(order)
     });
     if (!res.ok) throw new Error('Errore nella registrazione dell\'ordine');
@@ -184,7 +296,10 @@ export const api = {
   },
 
   deleteOrder: async (id: number): Promise<void> => {
-    const res = await fetch(`${API_BASE}/orders/${id}`, { method: 'DELETE' });
+    const res = await fetch(`${API_BASE}/orders/${id}`, { 
+      method: 'DELETE',
+      headers: authHeaders()
+    });
     if (!res.ok) throw new Error('Errore nella cancellazione');
   },
 
@@ -193,7 +308,9 @@ export const api = {
     let url = `${API_BASE}/readings?`;
     if (year) url += `year=${encodeURIComponent(year)}&`;
     if (month) url += `month=${encodeURIComponent(month)}&`;
-    const res = await fetch(url);
+    const res = await fetch(url, {
+      headers: authHeaders()
+    });
     if (!res.ok) throw new Error('Errore nel caricamento delle letture');
     return res.json();
   },
@@ -201,7 +318,7 @@ export const api = {
   createReading: async (reading: Partial<Reading>): Promise<Reading> => {
     const res = await fetch(`${API_BASE}/readings`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(),
       body: JSON.stringify(reading)
     });
     if (!res.ok) throw new Error('Errore nella registrazione della lettura');
@@ -209,7 +326,10 @@ export const api = {
   },
 
   deleteReading: async (id: number): Promise<void> => {
-    const res = await fetch(`${API_BASE}/readings/${id}`, { method: 'DELETE' });
+    const res = await fetch(`${API_BASE}/readings/${id}`, { 
+      method: 'DELETE',
+      headers: authHeaders()
+    });
     if (!res.ok) throw new Error('Errore nella cancellazione');
   },
 
@@ -226,7 +346,7 @@ export const api = {
   cacheCover: async (imageUrl: string, comicId?: number): Promise<{ localPath: string; coverUrl: string }> => {
     const res = await fetch(`${API_BASE}/metadata/save-cover`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(),
       body: JSON.stringify({ imageUrl, comicId })
     });
     if (!res.ok) throw new Error('Errore nel download della copertina');
@@ -236,8 +356,10 @@ export const api = {
   uploadCover: async (file: File): Promise<{ localPath: string }> => {
     const formData = new FormData();
     formData.append('cover', file);
+    const headers = authHeaders(false);
     const res = await fetch(`${API_BASE}/upload/cover`, {
       method: 'POST',
+      headers,
       body: formData
     });
     if (!res.ok) throw new Error('Errore nell\'upload dell\'immagine');
@@ -252,7 +374,10 @@ export const api = {
   },
 
   importFromOneDrive: async (): Promise<any> => {
-    const res = await fetch(`${API_BASE}/import/onedrive`, { method: 'POST' });
+    const res = await fetch(`${API_BASE}/import/onedrive`, { 
+      method: 'POST',
+      headers: authHeaders()
+    });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || 'Errore durante l\'importazione da OneDrive');
@@ -263,12 +388,24 @@ export const api = {
   importUploadedFile: async (file: File): Promise<any> => {
     const formData = new FormData();
     formData.append('excelFile', file);
+    const headers = authHeaders(false);
     const res = await fetch(`${API_BASE}/import/upload`, {
       method: 'POST',
+      headers,
       body: formData
     });
     if (!res.ok) throw new Error('Errore durante l\'importazione del file');
     return res.json();
+  },
+
+  exportExcelUrl: (): string => {
+    const token = authStorage.getToken();
+    return `${API_BASE}/export/excel?token=${encodeURIComponent(token || '')}`;
+  },
+
+  exportJsonUrl: (): string => {
+    const token = authStorage.getToken();
+    return `${API_BASE}/export/json?token=${encodeURIComponent(token || '')}`;
   },
 
   // Network Info for Mobile (Local Wi-Fi + Global Remote Tunnel)

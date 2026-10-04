@@ -1,6 +1,7 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
+const bcrypt = require('bcryptjs');
 
 const dbPath = path.join(__dirname, 'comics_count.db');
 const db = new Database(dbPath);
@@ -11,6 +12,15 @@ db.pragma('foreign_keys = ON');
 
 function initDatabase() {
   db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      email TEXT UNIQUE COLLATE NOCASE,
+      password_hash TEXT NOT NULL,
+      display_name TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS publishers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
@@ -20,6 +30,7 @@ function initDatabase() {
 
     CREATE TABLE IF NOT EXISTS comics (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER DEFAULT 1,
       title TEXT NOT NULL,
       series TEXT,
       issue_number TEXT,
@@ -41,11 +52,13 @@ function initDatabase() {
       notes TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY (publisher_id) REFERENCES publishers(id) ON DELETE SET NULL
     );
 
     CREATE TABLE IF NOT EXISTS sales_refunds (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER DEFAULT 1,
       year TEXT NOT NULL,
       month TEXT,
       title TEXT NOT NULL,
@@ -53,11 +66,13 @@ function initDatabase() {
       channel TEXT DEFAULT 'Vinted',
       notes TEXT,
       date TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS orders (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER DEFAULT 1,
       store_name TEXT NOT NULL,
       title TEXT NOT NULL,
       items_count INTEGER DEFAULT 1,
@@ -68,11 +83,13 @@ function initDatabase() {
       date TEXT,
       status TEXT DEFAULT 'Completato',
       notes TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS readings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER DEFAULT 1,
       comic_id INTEGER,
       title TEXT NOT NULL,
       year TEXT NOT NULL,
@@ -82,26 +99,68 @@ function initDatabase() {
       read_date TEXT,
       notes TEXT,
       created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY (comic_id) REFERENCES comics(id) ON DELETE SET NULL
     );
 
     CREATE TABLE IF NOT EXISTS monthly_budgets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER DEFAULT 1,
       year TEXT NOT NULL,
       month TEXT NOT NULL,
       budget_amount REAL DEFAULT 0,
-      UNIQUE(year, month)
+      UNIQUE(user_id, year, month),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS settings (
-      key TEXT PRIMARY KEY,
-      value TEXT
+      user_id INTEGER DEFAULT 1,
+      key TEXT NOT NULL,
+      value TEXT,
+      PRIMARY KEY (user_id, key),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
-
-    CREATE INDEX IF NOT EXISTS idx_comics_year_month ON comics(year, month);
-    CREATE INDEX IF NOT EXISTS idx_comics_publisher ON comics(publisher_id);
-    CREATE INDEX IF NOT EXISTS idx_comics_status ON comics(status);
   `);
+
+  // Migrazione dinamica colonne user_id per tabelle preesistenti
+  const tables = ['comics', 'sales_refunds', 'orders', 'readings', 'monthly_budgets', 'settings'];
+  for (const table of tables) {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name);
+    if (!cols.includes('user_id')) {
+      try {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN user_id INTEGER DEFAULT 1;`);
+      } catch (err) {
+        console.log(`Nota migrazione colonna user_id su ${table}:`, err.message);
+      }
+    }
+  }
+
+  // Creazione indici multiutente
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_comics_user ON comics(user_id);
+    CREATE INDEX IF NOT EXISTS idx_comics_user_year_month ON comics(user_id, year, month);
+    CREATE INDEX IF NOT EXISTS idx_sales_user ON sales_refunds(user_id);
+    CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id);
+    CREATE INDEX IF NOT EXISTS idx_readings_user ON readings(user_id);
+  `);
+
+  // Creazione account principale di default (Tryy_Nexus) se la tabella users non ha questo utente
+  const existingUser = db.prepare('SELECT id FROM users WHERE username = ?').get('Tryy_Nexus');
+  if (!existingUser) {
+    const salt = bcrypt.genSaltSync(10);
+    const hash = bcrypt.hashSync('Developer', salt);
+    const res = db.prepare(`
+      INSERT INTO users (username, email, password_hash, display_name)
+      VALUES (?, ?, ?, ?)
+    `).run('Tryy_Nexus', 'tryynexus@comics-count.local', hash, 'Tryy Nexus');
+    
+    const tryyId = res.lastInsertRowid;
+    // Assicuriamo che tutti i dati già salvati siano associati a Tryy_Nexus
+    db.prepare('UPDATE comics SET user_id = ? WHERE user_id IS NULL OR user_id = 1').run(tryyId);
+    db.prepare('UPDATE sales_refunds SET user_id = ? WHERE user_id IS NULL OR user_id = 1').run(tryyId);
+    db.prepare('UPDATE orders SET user_id = ? WHERE user_id IS NULL OR user_id = 1').run(tryyId);
+    db.prepare('UPDATE readings SET user_id = ? WHERE user_id IS NULL OR user_id = 1').run(tryyId);
+  }
 
   // Insert default publishers if table is empty
   const defaultPublishers = [

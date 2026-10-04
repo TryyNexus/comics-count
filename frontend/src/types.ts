@@ -16,6 +16,18 @@ export type PurchaseChannel =
   | 'Fiera / Evento'
   | 'Altro';
 
+export interface User {
+  id: number;
+  username: string;
+  email?: string;
+  display_name?: string;
+}
+
+export interface AuthResponse {
+  user: User;
+  token: string;
+}
+
 export interface Publisher {
   id: number;
   name: string;

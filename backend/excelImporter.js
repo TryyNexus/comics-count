@@ -10,7 +10,6 @@ const MONTH_NAMES = [
 
 function findOneDriveExcelPath() {
   const userProfile = process.env.USERPROFILE || 'C:\\Users\\damia';
-  // Check common OneDrive folder names
   const candidates = [
     path.join(userProfile, 'OneDrive - Università di Napoli Federico II', 'Fumetti.xlsx'),
     path.join(userProfile, 'OneDrive', 'Fumetti.xlsx'),
@@ -24,7 +23,6 @@ function findOneDriveExcelPath() {
     }
   }
 
-  // Scan directory for Fumetti.xlsx
   try {
     const files = fs.readdirSync(userProfile);
     for (const f of files) {
@@ -40,7 +38,6 @@ function findOneDriveExcelPath() {
 
 function excelDateToString(val) {
   if (typeof val === 'number' && val > 30000 && val < 60000) {
-    // Excel date serial
     const date = new Date(Math.round((val - 25569) * 86400 * 1000));
     return date.toISOString().split('T')[0];
   }
@@ -58,78 +55,70 @@ function normalizeStatus(val, defaultStatus = 'Acquistato') {
   if (str.includes('in lettura')) return 'In lettura';
   if (str.includes('vendut')) return 'Venduto';
   if (str.includes('in uscita')) return 'In uscita';
-  if (str.includes('preordinat')) return 'Preordinato';
   return defaultStatus;
 }
 
-function extractVariantAndIssue(title) {
-  let cleanTitle = title.trim();
-  let variant = '';
-  let issue = '';
-
-  // Extract variant hints
-  const varMatch = cleanTitle.match(/(cvr\s+[a-z0-9]+|variant\b.*|var\b.*|blank.*|blind bag.*|foil.*|firmato.*|firmacopie.*|discovery\b.*)/i);
-  if (varMatch) {
-    variant = varMatch[0].trim();
-    cleanTitle = cleanTitle.replace(varMatch[0], '').trim();
+function importExcel(customPath = null, userId = 1) {
+  const filePath = customPath || findOneDriveExcelPath();
+  if (!filePath || !fs.existsSync(filePath)) {
+    throw new Error(`File Excel non trovato: ${filePath || 'nessun percorso disponibile'}`);
   }
 
-  // Extract issue number at end or before variant
-  const numMatch = cleanTitle.match(/(?:#|vol\.?\s*|volume\s*|n\.?\s*)?(\d+(?:[-+]\d+)*)\s*$/i);
-  if (numMatch) {
-    issue = numMatch[1];
-  }
-
-  return { cleanTitle: cleanTitle.replace(/[#,-]+$/, '').trim(), issue, variant };
-}
-
-function importExcel(filePath) {
-  const targetPath = filePath || findOneDriveExcelPath();
-  if (!targetPath || !fs.existsSync(targetPath)) {
-    throw new Error(`File Excel non trovato al percorso: ${targetPath}`);
-  }
-
-  const wb = XLSX.readFile(targetPath, { cellFormula: true, cellNF: true });
-  const pubMap = {};
-  const pubs = db.prepare('SELECT id, name FROM publishers').all();
-  pubs.forEach(p => { pubMap[p.name.toLowerCase()] = p.id; });
+  const wb = XLSX.readFile(filePath, { cellDates: false });
+  const publishers = db.prepare('SELECT id, name FROM publishers').all();
+  const pubMap = new Map();
+  publishers.forEach(p => {
+    pubMap.set(p.name.toLowerCase(), p.id);
+  });
 
   const getPublisherId = (name) => {
-    const key = name.toLowerCase();
-    if (pubMap[key]) return pubMap[key];
-    // Check partial
-    for (const [pName, id] of Object.entries(pubMap)) {
-      if (key.includes(pName) || pName.includes(key)) return id;
+    if (!name) return null;
+    const clean = String(name).trim();
+    if (!clean) return null;
+    const key = clean.toLowerCase();
+
+    if (pubMap.has(key)) return pubMap.get(key);
+    for (const [k, id] of pubMap.entries()) {
+      if (key.includes(k) || k.includes(key)) return id;
     }
-    // Create new publisher
-    const res = db.prepare('INSERT INTO publishers (name, color) VALUES (?, ?)').run(name, '#6366f1');
-    pubMap[key] = res.lastInsertRowid;
-    return res.lastInsertRowid;
+
+    try {
+      const res = db.prepare('INSERT INTO publishers (name, color) VALUES (?, ?)').run(clean, '#6366f1');
+      pubMap.set(key, res.lastInsertRowid);
+      return res.lastInsertRowid;
+    } catch {
+      const existing = db.prepare('SELECT id FROM publishers WHERE name = ?').get(clean);
+      if (existing) {
+        pubMap.set(key, existing.id);
+        return existing.id;
+      }
+    }
+    return null;
   };
 
   const insertComic = db.prepare(`
     INSERT INTO comics (
-      title, series, issue_number, variant_info, publisher_id, year, month,
+      user_id, title, series, issue_number, variant_info, publisher_id, year, month,
       release_date, purchase_date, cover_price, purchase_price, status, channel, notes
     ) VALUES (
-      @title, @series, @issue_number, @variant_info, @publisher_id, @year, @month,
+      @user_id, @title, @series, @issue_number, @variant_info, @publisher_id, @year, @month,
       @release_date, @purchase_date, @cover_price, @purchase_price, @status, @channel, @notes
     )
   `);
 
   const insertSale = db.prepare(`
-    INSERT INTO sales_refunds (year, month, title, price, channel, notes)
-    VALUES (@year, @month, @title, @price, @channel, @notes)
+    INSERT INTO sales_refunds (user_id, year, month, title, price, channel, notes)
+    VALUES (@user_id, @year, @month, @title, @price, @channel, @notes)
   `);
 
   const insertOrder = db.prepare(`
-    INSERT INTO orders (store_name, title, items_count, total_price, year, month, status, notes)
-    VALUES (@store_name, @title, @items_count, @total_price, @year, @month, @status, @notes)
+    INSERT INTO orders (user_id, store_name, title, items_count, total_price, year, month, status, notes)
+    VALUES (@user_id, @store_name, @title, @items_count, @total_price, @year, @month, @status, @notes)
   `);
 
   const insertReading = db.prepare(`
-    INSERT INTO readings (title, year, month, category, notes)
-    VALUES (@title, @year, @month, @category, @notes)
+    INSERT INTO readings (user_id, title, year, month, category, notes)
+    VALUES (@user_id, @title, @year, @month, @category, @notes)
   `);
 
   const results = {
@@ -142,10 +131,12 @@ function importExcel(filePath) {
   };
 
   const importTx = db.transaction(() => {
-    // Clear previous records for clean idempotent sync
-    db.exec('DELETE FROM comics; DELETE FROM sales_refunds; DELETE FROM orders; DELETE FROM readings;');
+    // Clear user's previous records for clean idempotent sync
+    db.prepare('DELETE FROM comics WHERE user_id = ?').run(userId);
+    db.prepare('DELETE FROM sales_refunds WHERE user_id = ?').run(userId);
+    db.prepare('DELETE FROM orders WHERE user_id = ?').run(userId);
+    db.prepare('DELETE FROM readings WHERE user_id = ?').run(userId);
 
-    // Dynamic scan for any HVC sheets by year: HVC2026, HVC2027, HVC2028, etc.
     const hvcItemsByYearAndMonth = {};
     const hvcSheetRegex = /^HVC\s*(\d{4})$/i;
 
@@ -158,388 +149,308 @@ function importExcel(filePath) {
         const wsHVC = wb.Sheets[sheetName];
         if (!wsHVC || !wsHVC['!ref']) continue;
         const rangeHVC = XLSX.utils.decode_range(wsHVC['!ref']);
-        let hvcMonth = null;
 
         for (let R = 1; R <= rangeHVC.e.r; ++R) {
-          const valA = wsHVC[XLSX.utils.encode_cell({r: R, c: 0})] ? wsHVC[XLSX.utils.encode_cell({r: R, c: 0})].v : null;
-          if (valA && typeof valA === 'string') {
-            const lower = valA.trim().toLowerCase();
-            const found = MONTH_NAMES.find(m => lower.startsWith(m.toLowerCase()));
-            if (found) hvcMonth = found;
-          }
-
-          if (!hvcMonth) continue;
-          if (!hvcItemsByYearAndMonth[hvcYear][hvcMonth]) hvcItemsByYearAndMonth[hvcYear][hvcMonth] = [];
-
-          const hvcCols = [
-            { pub: 'DC', c: 1 },
-            { pub: 'Marvel', c: 2 },
-            { pub: 'Altro', c: 3 }
-          ];
-
-          for (const col of hvcCols) {
-            const cell = wsHVC[XLSX.utils.encode_cell({r: R, c: col.c})];
-            if (cell && typeof cell.v === 'string' && cell.v.trim().length > 2) {
-              hvcItemsByYearAndMonth[hvcYear][hvcMonth].push({
-                title: cell.v.trim(),
-                publisher: col.pub
-              });
-            }
-          }
-        }
-      }
-    }
-
-    const hvcMonthsExpanded = new Set();
-
-    // 1. Process all detected yearly sheets (e.g. 2023, 2024, 2025, 2026, 2027, 2028...)
-    const detectedYearSheets = wb.SheetNames
-      .filter(name => /^\d{4}$/.test(name.trim()))
-      .sort();
-
-    detectedYearSheets.forEach(year => {
-      const ws = wb.Sheets[year];
-      if (!ws) return;
-      results.sheetsProcessed.push(year);
-
-      const range = XLSX.utils.decode_range(ws['!ref']);
-
-      // Setup column coordinates per year format
-      let colDC = { title: 1, statusOrDate: 2, price: 3 };
-      let colMarvel = { title: 4, statusOrDate: 5, price: 6 };
-      let colOrdini = { title: 7, statusOrDate: 8, price: 9 };
-      let colManga = { title: 10, statusOrDate: 11, price: 12 };
-      let colEventi = { name: 13, item: 15, price: 17 };
-
-      if (year === '2024' || year === '2025') {
-        colDC = { title: 1, statusOrDate: 2, price: 3 };
-        colMarvel = { title: 4, statusOrDate: 5, price: 6 };
-        colOrdini = { title: 7, statusOrDate: null, price: 8 };
-        colManga = { title: 9, statusOrDate: 10, price: 11 };
-        colEventi = { name: 12, item: 14, price: 16 };
-      } else if (year === '2023') {
-        colDC = { title: 1, statusOrDate: 3, price: 4 };
-        colMarvel = { title: 5, statusOrDate: 6, price: 7 };
-        colOrdini = { title: 8, statusOrDate: null, price: 9 };
-        colManga = { title: 10, statusOrDate: 11, price: 12 };
-        colEventi = { name: 14, item: 15, price: 17 };
-      }
-
-      let currentMonth = null;
-
-      for (let R = 1; R <= range.e.r; ++R) {
-        const getVal = (C) => {
-          if (C === null || C === undefined) return null;
-          const cell = ws[XLSX.utils.encode_cell({r: R, c: C})];
-          return cell ? cell.v : null;
-        };
-
-        const valA = getVal(0);
-        if (valA && typeof valA === 'string') {
-          const lower = valA.trim().toLowerCase();
-          const foundMonth = MONTH_NAMES.find(m => lower.startsWith(m.toLowerCase()));
-          if (foundMonth) {
-            currentMonth = foundMonth;
-          }
-        }
-
-        // Sales / Refunds section check at bottom (rows 65+)
-        if (R >= 65) {
-          const titleCol = getVal(7) || getVal(8);
-          const priceCol = getVal(8) || getVal(9) || getVal(10);
-          if (titleCol && typeof titleCol === 'string' && typeof priceCol === 'number') {
-            const lowerTitle = titleCol.trim().toLowerCase();
-            if (!lowerTitle.includes('spesa annua') && !lowerTitle.includes('refound') && !lowerTitle.includes('ordine mirage')) {
-              insertSale.run({
-                year,
-                month: currentMonth || 'Annuale',
-                title: titleCol.trim(),
-                price: priceCol,
-                channel: 'Vinted / Usato',
-                notes: 'Importato da sezione Vendite/Rimborsi'
-              });
-              results.salesImported++;
-              continue;
-            }
-          }
-        }
-
-        if (!currentMonth) continue;
-
-        // Process Category / Publisher Columns
-        const categories = [
-          { pub: 'DC', cols: colDC, chan: 'Fumetteria' },
-          { pub: 'Marvel', cols: colMarvel, chan: 'Fumetteria' },
-          { pub: 'Manga', cols: colManga, chan: 'Fumetteria' },
-          { pub: 'Ordini / Usato', cols: colOrdini, chan: 'Vinted / Usato' }
-        ];
-
-        for (const cat of categories) {
-          const rawTitle = getVal(cat.cols.title);
-          if (rawTitle && typeof rawTitle === 'string' && rawTitle.trim().length > 1) {
-            const rawStatusOrDate = cat.cols.statusOrDate !== null ? getVal(cat.cols.statusOrDate) : null;
-            const rawPrice = getVal(cat.cols.price);
-
-            const numPrice = typeof rawPrice === 'number' ? rawPrice : 0;
-            let status = 'Acquistato';
-            let releaseDate = null;
-
-            if (typeof rawStatusOrDate === 'number' && rawStatusOrDate > 30000) {
-              releaseDate = excelDateToString(rawStatusOrDate);
-            } else if (rawStatusOrDate) {
-              status = normalizeStatus(rawStatusOrDate);
-            }
-
-            const { cleanTitle, issue, variant } = extractVariantAndIssue(rawTitle);
-            const lowerRaw = rawTitle.toLowerCase().trim();
-
-            // REQUIREMENT: Transform monthly HVC into individual comics from corresponding HVC<YYYY> sheet
-            const isHvcEntry = lowerRaw.startsWith('hvc') || lowerRaw.includes('hovistocose');
-            if (isHvcEntry) {
-              // 1. Record the order total for accounting
-              insertComic.run({
-                title: `HVC Ordine Totale (${currentMonth})`,
-                series: 'HVC Totale Ordine',
-                issue_number: null,
-                variant_info: null,
-                publisher_id: getPublisherId('Ordini / Usato'),
-                year,
-                month: currentMonth,
-                release_date: null,
-                purchase_date: null,
-                cover_price: numPrice,
-                purchase_price: numPrice,
-                status: 'Preordinato',
-                channel: 'HVC / Preordine',
-                notes: `Contabilizzazione ordine HVC ${currentMonth} ${year}`
-              });
-              results.comicsImported++;
-
-              // 2. Expand all individual comics for this year and month from the corresponding HVC sheet
-              const monthKey = `${year}_${currentMonth}`;
-              if (!hvcMonthsExpanded.has(monthKey) && hvcItemsByYearAndMonth[year] && hvcItemsByYearAndMonth[year][currentMonth]) {
-                hvcMonthsExpanded.add(monthKey);
-                for (const hItem of hvcItemsByYearAndMonth[year][currentMonth]) {
-                  const hExt = extractVariantAndIssue(hItem.title);
-                  const hPubId = getPublisherId(hItem.publisher);
-                  insertComic.run({
-                    title: hItem.title,
-                    series: hExt.cleanTitle,
-                    issue_number: hExt.issue || null,
-                    variant_info: hExt.variant || null,
-                    publisher_id: hPubId,
-                    year,
-                    month: currentMonth,
-                    release_date: null,
-                    purchase_date: null,
-                    cover_price: 0,
-                    purchase_price: 0,
-                    status: 'Preordinato',
-                    channel: 'HVC / Preordine',
-                    notes: `Singolo preordine da HoVistoCose ${currentMonth} ${year}`
-                  });
-                  results.hvcImported++;
-                  results.comicsImported++;
-                }
-              }
-              continue;
-            }
-
-            const pubId = getPublisherId(cat.pub);
-
-            insertComic.run({
-              title: cleanTitle || rawTitle.trim(),
-              series: cleanTitle,
-              issue_number: issue || null,
-              variant_info: variant || null,
-              publisher_id: pubId,
-              year,
-              month: currentMonth,
-              release_date: releaseDate,
-              purchase_date: null,
-              cover_price: numPrice,
-              purchase_price: numPrice,
-              status,
-              channel: cat.chan,
-              notes: rawTitle !== cleanTitle ? `Titolo originale: ${rawTitle}` : null
-            });
-            results.comicsImported++;
-          }
-        }
-
-        // Process Eventi / Fiere items
-        const rawEventItem = getVal(colEventi.item);
-        if (rawEventItem && typeof rawEventItem === 'string' && rawEventItem.trim().length > 1) {
-          const eventName = getVal(colEventi.name) || 'Comicon / Fiera';
-          const eventPrice = getVal(colEventi.price);
-          const numPrice = typeof eventPrice === 'number' ? eventPrice : 0;
-
-          const pubId = getPublisherId('Eventi / Fiere');
-          const { cleanTitle, issue, variant } = extractVariantAndIssue(rawEventItem);
-
-          insertComic.run({
-            title: cleanTitle || rawEventItem.trim(),
-            series: cleanTitle,
-            issue_number: issue || null,
-            variant_info: variant || null,
-            publisher_id: pubId,
-            year,
-            month: currentMonth,
-            release_date: null,
-            purchase_date: null,
-            cover_price: numPrice,
-            purchase_price: numPrice,
-            status: 'Acquistato',
-            channel: 'Fiera / Evento',
-            notes: `Evento: ${eventName}`
-          });
-          results.comicsImported++;
-        }
-      }
-    });
-
-    // 2. Process all detected HVC sheets (Pre-orders from HoVistoCose by year)
-    for (const sheetName of wb.SheetNames) {
-      const match = sheetName.trim().match(hvcSheetRegex);
-      if (match) {
-        const hvcYear = match[1];
-        results.sheetsProcessed.push(sheetName);
-        const ws = wb.Sheets[sheetName];
-        if (!ws || !ws['!ref']) continue;
-        const range = XLSX.utils.decode_range(ws['!ref']);
-        let currentMonth = null;
-
-        for (let R = 1; R <= range.e.r; ++R) {
-          const getVal = (C) => {
-            const cell = ws[XLSX.utils.encode_cell({r: R, c: C})];
-            return cell ? cell.v : null;
+          const getVal = (col) => {
+            const cell = wsHVC[XLSX.utils.encode_cell({ r: R, c: col })];
+            return cell ? (cell.w ? cell.w.trim() : (cell.v !== undefined ? String(cell.v).trim() : '')) : '';
           };
 
-          const valA = getVal(0);
-          if (valA && typeof valA === 'string') {
-            const lower = valA.trim().toLowerCase();
-            const foundMonth = MONTH_NAMES.find(m => lower.startsWith(m.toLowerCase()));
-            if (foundMonth) currentMonth = foundMonth;
-          }
+          const rawData = getVal(0);
+          const rawMese = getVal(1);
+          const rawAnno = getVal(2) || hvcYear;
+          const rawEditore = getVal(3);
+          const rawTitolo = getVal(4);
+          const rawSpesa = getVal(5);
+          const rawStato = getVal(6);
+          const rawNote = getVal(7);
 
-          if (!currentMonth) continue;
-          if (hvcMonthsExpanded.has(`${hvcYear}_${currentMonth}`)) continue;
+          if (!rawTitolo && !rawEditore && !rawSpesa) continue;
 
-          const hvcCols = [
-            { pub: 'DC', c: 1 },
-            { pub: 'Marvel', c: 2 },
-            { pub: 'Altro', c: 3 }
-          ];
-
-          for (const col of hvcCols) {
-            const title = getVal(col.c);
-            if (title && typeof title === 'string' && title.trim().length > 2) {
-              const { cleanTitle, issue, variant } = extractVariantAndIssue(title);
-              const pubId = getPublisherId(col.pub);
-
-              insertComic.run({
-                title: cleanTitle || title.trim(),
-                series: cleanTitle,
-                issue_number: issue || null,
-                variant_info: variant || null,
-                publisher_id: pubId,
-                year: hvcYear,
-                month: currentMonth,
-                release_date: null,
-                purchase_date: null,
-                cover_price: 0,
-                purchase_price: 0,
-                status: 'Preordinato',
-                channel: 'HVC / Preordine',
-                notes: `HVC Preordine originale ${hvcYear}: ${title.trim()}`
-              });
-              results.hvcImported++;
-              results.comicsImported++;
+          let targetM = rawMese;
+          if (!targetM) {
+            for (const m of MONTH_NAMES) {
+              if (rawData.toLowerCase().includes(m.toLowerCase()) || rawNote.toLowerCase().includes(m.toLowerCase())) {
+                targetM = m;
+                break;
+              }
             }
           }
+          if (!targetM) targetM = 'Gennaio';
+
+          const mNorm = MONTH_NAMES.find(m => m.toLowerCase() === targetM.toLowerCase()) || targetM;
+          if (!hvcItemsByYearAndMonth[hvcYear][mNorm]) {
+            hvcItemsByYearAndMonth[hvcYear][mNorm] = [];
+          }
+
+          let priceNum = 0;
+          if (rawSpesa) {
+            const cleanPrice = String(rawSpesa).replace('€', '').replace(',', '.').trim();
+            priceNum = parseFloat(cleanPrice) || 0;
+          }
+
+          hvcItemsByYearAndMonth[hvcYear][mNorm].push({
+            date: rawData,
+            year: rawAnno,
+            month: mNorm,
+            publisher: rawEditore || 'Altro',
+            title: rawTitolo || 'Fumetto HVC',
+            price: priceNum,
+            status: rawStato || 'Ordinato',
+            notes: rawNote ? `HVC Preordine: ${rawNote}` : 'HVC Preordine'
+          });
         }
       }
     }
 
-    // 3. Process Letture sheets (Letture 2026, Letture 2027)
-    ['Letture 2026', 'Letture 2027'].forEach(sheetName => {
-      if (!wb.Sheets[sheetName]) return;
-      results.sheetsProcessed.push(sheetName);
-      const ws = wb.Sheets[sheetName];
-      const range = XLSX.utils.decode_range(ws['!ref']);
-      const year = sheetName.replace('Letture', '').trim();
-      let currentMonth = null;
+    const yearRegex = /^(20\d{2})$/;
 
-      for (let R = 1; R <= range.e.r; ++R) {
-        const getVal = (C) => {
-          const cell = ws[XLSX.utils.encode_cell({r: R, c: C})];
-          return cell ? cell.v : null;
+    for (const sheetName of wb.SheetNames) {
+      const trimmedSheet = sheetName.trim();
+      const match = trimmedSheet.match(yearRegex);
+      if (!match) continue;
+
+      const year = match[1];
+      const ws = wb.Sheets[sheetName];
+      if (!ws || !ws['!ref']) continue;
+
+      results.sheetsProcessed.push(trimmedSheet);
+      const range = XLSX.utils.decode_range(ws['!ref']);
+
+      let currentMonth = null;
+      let inVendite = false;
+      let inOrdini = false;
+      let inLetture = false;
+
+      for (let R = 0; R <= range.e.r; ++R) {
+        const getCell = (colIdx) => {
+          const addr = XLSX.utils.encode_cell({ r: R, c: colIdx });
+          return ws[addr];
         };
 
-        const valA = getVal(0);
-        if (valA && typeof valA === 'string') {
-          const lower = valA.trim().toLowerCase();
-          const foundMonth = MONTH_NAMES.find(m => lower.startsWith(m.toLowerCase()));
-          if (foundMonth) currentMonth = foundMonth;
-        }
+        const getVal = (colIdx) => {
+          const cell = getCell(colIdx);
+          if (!cell) return null;
+          if (cell.w !== undefined) return cell.w.trim();
+          if (cell.v !== undefined) return String(cell.v).trim();
+          return null;
+        };
 
-        if (!currentMonth) continue;
+        const colA = getVal(0);
+        const colB = getVal(1);
+        const colC = getVal(2);
+        const colD = getVal(3);
+        const colE = getVal(4);
+        const colF = getVal(5);
 
-        // Categories: DC (1), Marvel (2), Altro (3), Manga (4)
-        const cats = [
-          { name: 'DC', c: 1 },
-          { name: 'Marvel', c: 2 },
-          { name: 'Altro', c: 3 },
-          { name: 'Manga', c: 4 }
-        ];
+        if (colA) {
+          const normA = colA.toLowerCase();
+          const foundMonth = MONTH_NAMES.find(m => normA.includes(m.toLowerCase()));
+          if (foundMonth && (normA.length < 25 || normA.includes('acquisti') || normA.includes('mensile'))) {
+            currentMonth = foundMonth;
+            inVendite = false;
+            inOrdini = false;
+            inLetture = false;
+            continue;
+          }
 
-        for (const cat of cats) {
-          const readTitle = getVal(cat.c);
-          if (readTitle && typeof readTitle === 'string' && readTitle.trim().length > 1) {
-            insertReading.run({
-              title: readTitle.trim(),
-              year,
-              month: currentMonth,
-              category: cat.name,
-              notes: null
-            });
-            results.readingsImported++;
+          if (normA.includes('vendit') || normA.includes('rimbors') || normA.includes('entrate')) {
+            inVendite = true;
+            inOrdini = false;
+            inLetture = false;
+            continue;
+          }
+          if (normA.includes('ordin') && !normA.includes('fumett')) {
+            inOrdini = true;
+            inVendite = false;
+            inLetture = false;
+            continue;
+          }
+          if (normA.includes('lettur') || normA.includes('letti nel')) {
+            inLetture = true;
+            inVendite = false;
+            inOrdini = false;
+            continue;
           }
         }
-      }
-    });
 
-    // 4. Process Ordini sheet
-    if (wb.Sheets['Ordini']) {
-      results.sheetsProcessed.push('Ordini');
-      const ws = wb.Sheets['Ordini'];
-      const range = XLSX.utils.decode_range(ws['!ref']);
-
-      // Walk through sections in Ordini
-      for (let R = 0; R <= range.e.r; ++R) {
-        for (let C = 0; C <= range.e.c; ++C) {
-          const cell = ws[XLSX.utils.encode_cell({r: R, c: C})];
-          if (cell && typeof cell.v === 'string' && (cell.v.includes('Libraccio') || cell.v.includes('My Comics') || cell.v.includes('MangaYo') || cell.v.includes('Amazon') || cell.v.includes('Feltrinelli'))) {
-            const storeName = cell.v.trim();
-            // Look for sub-items in rows below until next empty or store header
-            for (let subR = R + 1; subR < R + 8 && subR <= range.e.r; ++subR) {
-              const itemCell = ws[XLSX.utils.encode_cell({r: subR, c: C})];
-              const priceCell = ws[XLSX.utils.encode_cell({r: subR, c: C + 1})];
-              if (itemCell && typeof itemCell.v === 'string' && itemCell.v.trim().length > 1) {
-                const price = typeof (priceCell ? priceCell.v : null) === 'number' ? priceCell.v : 0;
-                insertOrder.run({
-                  store_name: storeName,
-                  title: itemCell.v.trim(),
-                  items_count: 1,
-                  total_price: price,
-                  year: '2024',
-                  month: 'Ordini',
-                  status: 'Completato',
-                  notes: `Sezione ${storeName}`
-                });
-                results.ordersImported++;
-              }
+        if (inVendite) {
+          if (colA && (colA.toLowerCase().includes('titolo') || colA.toLowerCase().includes('data'))) continue;
+          if (colB || colA) {
+            const title = colB || colA;
+            const priceVal = colC || colD || colE;
+            let priceNum = 0;
+            if (priceVal) {
+              const clean = String(priceVal).replace('€', '').replace(',', '.').trim();
+              priceNum = parseFloat(clean) || 0;
             }
+            if (title && priceNum > 0 && !title.toLowerCase().includes('totale')) {
+              insertSale.run({
+                user_id: userId,
+                year,
+                month: currentMonth || 'Gennaio',
+                title,
+                price: priceNum,
+                channel: 'Vinted',
+                notes: 'Importato da Excel'
+              });
+              results.salesImported++;
+            }
+          }
+          continue;
+        }
+
+        if (inOrdini) {
+          if (colA && colA.toLowerCase().includes('negozio')) continue;
+          if (colA || colB) {
+            const store = colA || 'Negozio Online';
+            const title = colB || store;
+            const priceVal = colD || colC || colE;
+            let priceNum = 0;
+            if (priceVal) {
+              const clean = String(priceVal).replace('€', '').replace(',', '.').trim();
+              priceNum = parseFloat(clean) || 0;
+            }
+            if (title && priceNum > 0 && !title.toLowerCase().includes('totale')) {
+              insertOrder.run({
+                user_id: userId,
+                store_name: store,
+                title,
+                items_count: 1,
+                total_price: priceNum,
+                year,
+                month: currentMonth || 'Gennaio',
+                status: 'Completato',
+                notes: 'Importato da Excel'
+              });
+              results.ordersImported++;
+            }
+          }
+          continue;
+        }
+
+        if (inLetture) {
+          if (colA && colA.toLowerCase().includes('titolo')) continue;
+          if (colA || colB) {
+            const title = colA || colB;
+            if (title && !title.toLowerCase().includes('totale')) {
+              insertReading.run({
+                user_id: userId,
+                title,
+                year,
+                month: currentMonth || 'Gennaio',
+                category: colB || 'Manga',
+                notes: colC || null
+              });
+              results.readingsImported++;
+            }
+          }
+          continue;
+        }
+
+        const parseColumnBlock = (titleVal, priceVal, defaultPubName, channel = 'Fumetteria') => {
+          if (!titleVal) return null;
+          const cleanTitle = String(titleVal).trim();
+          if (!cleanTitle || cleanTitle.toLowerCase().startsWith('totale') || cleanTitle.toLowerCase() === '€' || cleanTitle.toLowerCase() === 'titolo') {
+            return null;
+          }
+
+          let priceNum = 0;
+          if (priceVal !== null && priceVal !== undefined) {
+            const cleanP = String(priceVal).replace('€', '').replace(',', '.').trim();
+            priceNum = parseFloat(cleanP) || 0;
+          }
+
+          let pubName = defaultPubName;
+          let pureTitle = cleanTitle;
+
+          const dcMatch = cleanTitle.match(/^(?:DC\s*[-:]?\s*|BATMAN\s*[-:]?\s*|SUPERMAN\s*[-:]?\s*)(.*)/i);
+          if (dcMatch && defaultPubName === 'Panini Comics') {
+            pubName = 'DC';
+          }
+
+          const marvelMatch = cleanTitle.match(/^(?:MARVEL\s*[-:]?\s*|SPIDER-MAN\s*[-:]?\s*|AVENGERS\s*[-:]?\s*|X-MEN\s*[-:]?\s*)(.*)/i);
+          if (marvelMatch && defaultPubName === 'Panini Comics') {
+            pubName = 'Marvel';
+          }
+
+          let issueNum = null;
+          const issueMatch = pureTitle.match(/(?:#|n\.?|vol\.?)\s*(\d+(?:[.,]\d+)?)/i);
+          if (issueMatch) {
+            issueNum = issueMatch[1];
+          }
+
+          let variantInfo = null;
+          if (/variant|cover\s+[a-z]|foil|white|exclusive/i.test(pureTitle)) {
+            const vMatch = pureTitle.match(/(variant(?:\s+[a-z0-9]+)?|cover\s+[a-z]|foil|white)/i);
+            if (vMatch) variantInfo = vMatch[1];
+          }
+
+          const pubId = getPublisherId(pubName);
+
+          insertComic.run({
+            user_id: userId,
+            title: pureTitle,
+            series: pureTitle.replace(/(?:#|n\.?|vol\.?)\s*(\d+)/i, '').trim(),
+            issue_number: issueNum,
+            variant_info: variantInfo,
+            publisher_id: pubId,
+            year,
+            month: currentMonth || 'Gennaio',
+            release_date: null,
+            purchase_date: null,
+            cover_price: priceNum,
+            purchase_price: priceNum,
+            status: 'Acquistato',
+            channel,
+            notes: null
+          });
+
+          results.comicsImported++;
+        };
+
+        if (colA && colA.toLowerCase().includes('dc')) continue;
+        if (colB && colB.toLowerCase().includes('spesa')) continue;
+
+        if (colA && colB && currentMonth) {
+          parseColumnBlock(colA, colB, 'DC', 'Fumetteria');
+        }
+        if (colC && colD && currentMonth) {
+          parseColumnBlock(colC, colD, 'Marvel', 'Fumetteria');
+        }
+        if (colE && colF && currentMonth) {
+          parseColumnBlock(colE, colF, 'Manga', 'Fumetteria');
+        }
+        const colG = getVal(6);
+        const colH = getVal(7);
+        if (colG && colH && currentMonth) {
+          parseColumnBlock(colG, colH, 'Altro', 'Fumetteria');
+        }
+      }
+
+      if (hvcItemsByYearAndMonth[year]) {
+        for (const [mName, items] of Object.entries(hvcItemsByYearAndMonth[year])) {
+          for (const item of items) {
+            const pubId = getPublisherId(item.publisher);
+            insertComic.run({
+              user_id: userId,
+              title: item.title,
+              series: item.title,
+              issue_number: null,
+              variant_info: null,
+              publisher_id: pubId,
+              year,
+              month: mName,
+              release_date: null,
+              purchase_date: item.date ? excelDateToString(item.date) : null,
+              cover_price: item.price,
+              purchase_price: item.price,
+              status: normalizeStatus(item.status, 'Acquistato'),
+              channel: 'HoVistoCose',
+              notes: item.notes
+            });
+            results.comicsImported++;
+            results.hvcImported++;
           }
         }
       }
@@ -550,4 +461,7 @@ function importExcel(filePath) {
   return results;
 }
 
-module.exports = { importExcel, findOneDriveExcelPath };
+module.exports = {
+  importExcel,
+  findOneDriveExcelPath
+};

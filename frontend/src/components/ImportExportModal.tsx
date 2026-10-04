@@ -216,7 +216,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <a
-                href="/api/export/excel"
+                href={api.exportExcelUrl()}
                 download="Fumetti_Export.xlsx"
                 className="p-3.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 flex items-center justify-between group transition"
               >
@@ -237,7 +237,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
               </a>
 
               <a
-                href="/api/export/json"
+                href={api.exportJsonUrl()}
                 download="Fumetti_Backup.json"
                 className="p-3.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 flex items-center justify-between group transition"
               >

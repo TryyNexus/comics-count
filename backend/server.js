@@ -4,7 +4,9 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const multer = require('multer');
+const bcrypt = require('bcryptjs');
 const { db } = require('./db');
+const { authMiddleware, generateToken } = require('./auth');
 const { importExcel, findOneDriveExcelPath } = require('./excelImporter');
 const { exportToExcel, exportToJson } = require('./excelExporter');
 const { searchMetadata, downloadAndCacheCover, COVERS_DIR } = require('./metadataService');
@@ -26,11 +28,101 @@ if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 const upload = multer({ dest: uploadDir });
 
 // -------------------------------------------------------------
-// COMICS ROUTES
+// AUTHENTICATION ROUTES (LOGIN, REGISTER, ME)
 // -------------------------------------------------------------
 
-app.get('/api/comics', (req, res) => {
+app.post('/api/auth/register', (req, res) => {
   try {
+    const { username, email, password, displayName } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username e Password sono obbligatori' });
+    }
+
+    if (username.trim().length < 3) {
+      return res.status(400).json({ error: 'Lo username deve avere almeno 3 caratteri' });
+    }
+
+    if (password.length < 4) {
+      return res.status(400).json({ error: 'La password deve avere almeno 4 caratteri' });
+    }
+
+    const cleanUsername = username.trim();
+    const existing = db.prepare('SELECT id FROM users WHERE username = ? COLLATE NOCASE').get(cleanUsername);
+    if (existing) {
+      return res.status(409).json({ error: 'Questo Username è già registrato' });
+    }
+
+    const salt = bcrypt.genSaltSync(10);
+    const hash = bcrypt.hashSync(password, salt);
+
+    const result = db.prepare(`
+      INSERT INTO users (username, email, password_hash, display_name)
+      VALUES (?, ?, ?, ?)
+    `).run(cleanUsername, email ? email.trim() : null, hash, displayName || cleanUsername);
+
+    const newUser = {
+      id: result.lastInsertRowid,
+      username: cleanUsername,
+      display_name: displayName || cleanUsername
+    };
+
+    const token = generateToken(newUser);
+    res.json({
+      user: newUser,
+      token
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/auth/login', (req, res) => {
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Inserisci username e password' });
+    }
+
+    const cleanUsername = username.trim();
+    const user = db.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE OR email = ? COLLATE NOCASE')
+      .get(cleanUsername, cleanUsername);
+
+    if (!user) {
+      return res.status(401).json({ error: 'Credenziali non valide' });
+    }
+
+    const isValid = bcrypt.compareSync(password, user.password_hash);
+    if (!isValid) {
+      return res.status(401).json({ error: 'Credenziali non valide' });
+    }
+
+    const safeUser = {
+      id: user.id,
+      username: user.username,
+      display_name: user.display_name || user.username
+    };
+
+    const token = generateToken(safeUser);
+    res.json({
+      user: safeUser,
+      token
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/auth/me', authMiddleware, (req, res) => {
+  res.json({ user: req.user });
+});
+
+// -------------------------------------------------------------
+// COMICS ROUTES (MULTI-USER)
+// -------------------------------------------------------------
+
+app.get('/api/comics', authMiddleware, (req, res) => {
+  try {
+    const userId = req.user.id;
     const { year, month, publisherId, status, channel, search } = req.query;
     let query = `
       SELECT 
@@ -39,9 +131,9 @@ app.get('/api/comics', (req, res) => {
         p.color AS publisher_color
       FROM comics c
       LEFT JOIN publishers p ON c.publisher_id = p.id
-      WHERE 1=1
+      WHERE c.user_id = ?
     `;
-    const params = [];
+    const params = [userId];
 
     if (year && year !== 'all') {
       query += ` AND c.year = ?`;
@@ -77,8 +169,9 @@ app.get('/api/comics', (req, res) => {
   }
 });
 
-app.post('/api/comics', async (req, res) => {
+app.post('/api/comics', authMiddleware, async (req, res) => {
   try {
+    const userId = req.user.id;
     const {
       title, series, issue_number, variant_info, publisher_id,
       year, month, release_date, purchase_date, cover_price,
@@ -96,12 +189,12 @@ app.post('/api/comics', async (req, res) => {
 
     const stmt = db.prepare(`
       INSERT INTO comics (
-        title, series, issue_number, variant_info, publisher_id,
+        user_id, title, series, issue_number, variant_info, publisher_id,
         year, month, release_date, purchase_date, cover_price,
         purchase_price, isbn, ean, upc, cover_url, local_cover_path,
         status, channel, notes
       ) VALUES (
-        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?,
         ?, ?, ?
@@ -109,7 +202,7 @@ app.post('/api/comics', async (req, res) => {
     `);
 
     const result = stmt.run(
-      title, series || null, issue_number || null, variant_info || null, publisher_id || null,
+      userId, title, series || null, issue_number || null, variant_info || null, publisher_id || null,
       year, month, release_date || null, purchase_date || null, Number(cover_price) || 0,
       Number(purchase_price) || 0, isbn || null, ean || null, upc || null,
       cover_url || null, localCoverPath, status || 'Acquistato', channel || 'Fumetteria', notes || null
@@ -118,8 +211,8 @@ app.post('/api/comics', async (req, res) => {
     const created = db.prepare(`
       SELECT c.*, p.name AS publisher_name, p.color AS publisher_color
       FROM comics c LEFT JOIN publishers p ON c.publisher_id = p.id
-      WHERE c.id = ?
-    `).get(result.lastInsertRowid);
+      WHERE c.id = ? AND c.user_id = ?
+    `).get(result.lastInsertRowid, userId);
 
     res.json(created);
   } catch (e) {
@@ -127,14 +220,19 @@ app.post('/api/comics', async (req, res) => {
   }
 });
 
-app.put('/api/comics/:id', async (req, res) => {
+app.put('/api/comics/:id', authMiddleware, async (req, res) => {
   try {
+    const userId = req.user.id;
     const id = req.params.id;
     const {
       title, series, issue_number, variant_info, publisher_id,
       year, month, release_date, purchase_date, cover_price,
       purchase_price, isbn, ean, upc, cover_url, status, channel, notes
     } = req.body;
+
+    // Verify ownership
+    const existing = db.prepare('SELECT id FROM comics WHERE id = ? AND user_id = ?').get(id, userId);
+    if (!existing) return res.status(404).json({ error: 'Fumetto non trovato' });
 
     let localCoverPath = req.body.local_cover_path;
     if (cover_url && cover_url.startsWith('http') && (!localCoverPath || !localCoverPath.includes('cover_'))) {
@@ -149,21 +247,21 @@ app.put('/api/comics/:id', async (req, res) => {
         purchase_price = ?, isbn = ?, ean = ?, upc = ?, cover_url = ?,
         local_cover_path = COALESCE(?, local_cover_path), status = ?, channel = ?,
         notes = ?, updated_at = datetime('now')
-      WHERE id = ?
+      WHERE id = ? AND user_id = ?
     `);
 
     stmt.run(
       title, series, issue_number, variant_info, publisher_id,
       year, month, release_date, purchase_date, Number(cover_price) || 0,
       Number(purchase_price) || 0, isbn, ean, upc, cover_url,
-      localCoverPath, status, channel, notes, id
+      localCoverPath, status, channel, notes, id, userId
     );
 
     const updated = db.prepare(`
       SELECT c.*, p.name AS publisher_name, p.color AS publisher_color
       FROM comics c LEFT JOIN publishers p ON c.publisher_id = p.id
-      WHERE c.id = ?
-    `).get(id);
+      WHERE c.id = ? AND c.user_id = ?
+    `).get(id, userId);
 
     res.json(updated);
   } catch (e) {
@@ -171,19 +269,22 @@ app.put('/api/comics/:id', async (req, res) => {
   }
 });
 
-app.patch('/api/comics/:id/status', (req, res) => {
+app.patch('/api/comics/:id/status', authMiddleware, (req, res) => {
   try {
+    const userId = req.user.id;
     const { status } = req.body;
-    db.prepare("UPDATE comics SET status = ?, updated_at = datetime('now') WHERE id = ?").run(status, req.params.id);
+    db.prepare("UPDATE comics SET status = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?")
+      .run(status, req.params.id, userId);
     res.json({ success: true, id: req.params.id, status });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-app.delete('/api/comics/:id', (req, res) => {
+app.delete('/api/comics/:id', authMiddleware, (req, res) => {
   try {
-    db.prepare('DELETE FROM comics WHERE id = ?').run(req.params.id);
+    const userId = req.user.id;
+    db.prepare('DELETE FROM comics WHERE id = ? AND user_id = ?').run(req.params.id, userId);
     res.json({ success: true, id: req.params.id });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -191,8 +292,9 @@ app.delete('/api/comics/:id', (req, res) => {
 });
 
 // All purchased comics across years for readings search
-app.get('/api/comics/purchased', (req, res) => {
+app.get('/api/comics/purchased', authMiddleware, (req, res) => {
   try {
+    const userId = req.user.id;
     const { category, search } = req.query;
     let query = `
       SELECT 
@@ -213,10 +315,11 @@ app.get('/api/comics/purchased', (req, res) => {
         c.purchase_price
       FROM comics c
       LEFT JOIN publishers p ON c.publisher_id = p.id
-      WHERE c.title NOT LIKE 'HVC Ordine Totale%'
+      WHERE c.user_id = ?
+        AND c.title NOT LIKE 'HVC Ordine Totale%'
         AND c.title NOT LIKE 'Totale Ordine%'
     `;
-    const params = [];
+    const params = [userId];
 
     if (search) {
       query += ` AND (c.title LIKE ? OR c.series LIKE ?)`;
@@ -281,14 +384,15 @@ app.post('/api/publishers', (req, res) => {
 });
 
 // -------------------------------------------------------------
-// SALES / REFUNDS (VENDITE & RIMBORSI)
+// SALES / REFUNDS (MULTI-USER)
 // -------------------------------------------------------------
 
-app.get('/api/sales', (req, res) => {
+app.get('/api/sales', authMiddleware, (req, res) => {
   try {
+    const userId = req.user.id;
     const { year, month } = req.query;
-    let query = 'SELECT * FROM sales_refunds WHERE 1=1';
-    const params = [];
+    let query = 'SELECT * FROM sales_refunds WHERE user_id = ?';
+    const params = [userId];
     if (year && year !== 'all') {
       query += ' AND year = ?';
       params.push(year);
@@ -305,20 +409,22 @@ app.get('/api/sales', (req, res) => {
   }
 });
 
-app.post('/api/sales', (req, res) => {
+app.post('/api/sales', authMiddleware, (req, res) => {
   try {
+    const userId = req.user.id;
     const { year, month, title, price, channel, notes } = req.body;
-    const stmt = db.prepare('INSERT INTO sales_refunds (year, month, title, price, channel, notes) VALUES (?, ?, ?, ?, ?, ?)');
-    const result = stmt.run(year, month || null, title, Number(price) || 0, channel || 'Vinted', notes || null);
+    const stmt = db.prepare('INSERT INTO sales_refunds (user_id, year, month, title, price, channel, notes) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    const result = stmt.run(userId, year, month || null, title, Number(price) || 0, channel || 'Vinted', notes || null);
     res.json({ id: result.lastInsertRowid, year, month, title, price, channel, notes });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-app.delete('/api/sales/:id', (req, res) => {
+app.delete('/api/sales/:id', authMiddleware, (req, res) => {
   try {
-    db.prepare('DELETE FROM sales_refunds WHERE id = ?').run(req.params.id);
+    const userId = req.user.id;
+    db.prepare('DELETE FROM sales_refunds WHERE id = ? AND user_id = ?').run(req.params.id, userId);
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -326,14 +432,15 @@ app.delete('/api/sales/:id', (req, res) => {
 });
 
 // -------------------------------------------------------------
-// ORDERS & READINGS
+// ORDERS & READINGS (MULTI-USER)
 // -------------------------------------------------------------
 
-app.get('/api/orders', (req, res) => {
+app.get('/api/orders', authMiddleware, (req, res) => {
   try {
+    const userId = req.user.id;
     const { year } = req.query;
-    let query = 'SELECT * FROM orders WHERE 1=1';
-    const params = [];
+    let query = 'SELECT * FROM orders WHERE user_id = ?';
+    const params = [userId];
     if (year && year !== 'all') {
       query += ' AND year = ?';
       params.push(year);
@@ -346,28 +453,31 @@ app.get('/api/orders', (req, res) => {
   }
 });
 
-app.post('/api/orders', (req, res) => {
+app.post('/api/orders', authMiddleware, (req, res) => {
   try {
+    const userId = req.user.id;
     const { store_name, title, items_count, total_price, year, month, status, notes } = req.body;
-    const stmt = db.prepare('INSERT INTO orders (store_name, title, items_count, total_price, year, month, status, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-    const result = stmt.run(store_name, title, items_count || 1, Number(total_price) || 0, year || '2026', month || null, status || 'Completato', notes || null);
+    const stmt = db.prepare('INSERT INTO orders (user_id, store_name, title, items_count, total_price, year, month, status, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    const result = stmt.run(userId, store_name, title, items_count || 1, Number(total_price) || 0, year || '2026', month || null, status || 'Completato', notes || null);
     res.json({ id: result.lastInsertRowid, ...req.body });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-app.delete('/api/orders/:id', (req, res) => {
+app.delete('/api/orders/:id', authMiddleware, (req, res) => {
   try {
-    db.prepare('DELETE FROM orders WHERE id = ?').run(req.params.id);
+    const userId = req.user.id;
+    db.prepare('DELETE FROM orders WHERE id = ? AND user_id = ?').run(req.params.id, userId);
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-app.get('/api/readings', (req, res) => {
+app.get('/api/readings', authMiddleware, (req, res) => {
   try {
+    const userId = req.user.id;
     const { year, month } = req.query;
     let query = `
       SELECT 
@@ -383,9 +493,9 @@ app.get('/api/readings', (req, res) => {
       FROM readings r
       LEFT JOIN comics c ON r.comic_id = c.id
       LEFT JOIN publishers p ON c.publisher_id = p.id
-      WHERE 1=1
+      WHERE r.user_id = ?
     `;
-    const params = [];
+    const params = [userId];
     if (year && year !== 'all') { query += ' AND r.year = ?'; params.push(year); }
     if (month && month !== 'all') { query += ' AND r.month = ?'; params.push(month); }
     query += ' ORDER BY r.id DESC';
@@ -396,14 +506,15 @@ app.get('/api/readings', (req, res) => {
   }
 });
 
-app.post('/api/readings', (req, res) => {
+app.post('/api/readings', authMiddleware, (req, res) => {
   try {
+    const userId = req.user.id;
     const { comic_id, title, year, month, category, rating, notes, read_date } = req.body;
-    const stmt = db.prepare('INSERT INTO readings (comic_id, title, year, month, category, rating, notes, read_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-    const result = stmt.run(comic_id || null, title, year, month, category || 'Altro', rating || null, notes || null, read_date || null);
+    const stmt = db.prepare('INSERT INTO readings (user_id, comic_id, title, year, month, category, rating, notes, read_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    const result = stmt.run(userId, comic_id || null, title, year, month, category || 'Altro', rating || null, notes || null, read_date || null);
 
     if (comic_id) {
-      db.prepare("UPDATE comics SET status = 'Letto', updated_at = datetime('now') WHERE id = ?").run(comic_id);
+      db.prepare("UPDATE comics SET status = 'Letto', updated_at = datetime('now') WHERE id = ? AND user_id = ?").run(comic_id, userId);
     }
 
     const created = db.prepare(`
@@ -420,8 +531,8 @@ app.post('/api/readings', (req, res) => {
       FROM readings r
       LEFT JOIN comics c ON r.comic_id = c.id
       LEFT JOIN publishers p ON c.publisher_id = p.id
-      WHERE r.id = ?
-    `).get(result.lastInsertRowid);
+      WHERE r.id = ? AND r.user_id = ?
+    `).get(result.lastInsertRowid, userId);
 
     res.json(created);
   } catch (e) {
@@ -429,9 +540,10 @@ app.post('/api/readings', (req, res) => {
   }
 });
 
-app.delete('/api/readings/:id', (req, res) => {
+app.delete('/api/readings/:id', authMiddleware, (req, res) => {
   try {
-    db.prepare('DELETE FROM readings WHERE id = ?').run(req.params.id);
+    const userId = req.user.id;
+    db.prepare('DELETE FROM readings WHERE id = ? AND user_id = ?').run(req.params.id, userId);
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -439,26 +551,28 @@ app.delete('/api/readings/:id', (req, res) => {
 });
 
 // -------------------------------------------------------------
-// BUDGETS & SETTINGS
+// BUDGETS (MULTI-USER)
 // -------------------------------------------------------------
 
-app.get('/api/budgets', (req, res) => {
+app.get('/api/budgets', authMiddleware, (req, res) => {
   try {
-    const budgets = db.prepare('SELECT * FROM monthly_budgets').all();
+    const userId = req.user.id;
+    const budgets = db.prepare('SELECT * FROM monthly_budgets WHERE user_id = ?').all(userId);
     res.json(budgets);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-app.post('/api/budgets', (req, res) => {
+app.post('/api/budgets', authMiddleware, (req, res) => {
   try {
+    const userId = req.user.id;
     const { year, month, budget_amount } = req.body;
     db.prepare(`
-      INSERT INTO monthly_budgets (year, month, budget_amount)
-      VALUES (?, ?, ?)
-      ON CONFLICT(year, month) DO UPDATE SET budget_amount = excluded.budget_amount
-    `).run(year, month, Number(budget_amount) || 0);
+      INSERT INTO monthly_budgets (user_id, year, month, budget_amount)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(user_id, year, month) DO UPDATE SET budget_amount = excluded.budget_amount
+    `).run(userId, year, month, Number(budget_amount) || 0);
     res.json({ success: true, year, month, budget_amount });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -466,14 +580,15 @@ app.post('/api/budgets', (req, res) => {
 });
 
 // -------------------------------------------------------------
-// ACCOUNTING & STATISTICS
+// ACCOUNTING & STATISTICS (MULTI-USER)
 // -------------------------------------------------------------
 
-app.get('/api/stats/summary', (req, res) => {
+app.get('/api/stats/summary', authMiddleware, (req, res) => {
   try {
+    const userId = req.user.id;
     const { year, month } = req.query;
     const currentYear = year || '2026';
-    const currentMonth = month || 'Ottobre';
+    const currentMonth = month || 'Gennaio';
 
     // Monthly spent
     const monthlySpentRow = db.prepare(`
@@ -482,8 +597,8 @@ app.get('/api/stats/summary', (req, res) => {
         COUNT(id) AS count,
         SUM(CASE WHEN status = 'Letto' THEN 1 ELSE 0 END) AS read_count
       FROM comics
-      WHERE year = ? AND month = ?
-    `).get(currentYear, currentMonth) || {};
+      WHERE user_id = ? AND year = ? AND month = ?
+    `).get(userId, currentYear, currentMonth) || {};
 
     // Annual spent
     const annualSpentRow = db.prepare(`
@@ -491,28 +606,28 @@ app.get('/api/stats/summary', (req, res) => {
         ROUND(SUM(purchase_price), 2) AS spent,
         COUNT(id) AS count
       FROM comics
-      WHERE year = ?
-    `).get(currentYear) || {};
+      WHERE user_id = ? AND year = ?
+    `).get(userId, currentYear) || {};
 
     // Annual sales / refunds
     const annualSalesRow = db.prepare(`
       SELECT ROUND(SUM(price), 2) AS sales
       FROM sales_refunds
-      WHERE year = ?
-    `).get(currentYear) || {};
+      WHERE user_id = ? AND year = ?
+    `).get(userId, currentYear) || {};
 
     // Monthly sales / refunds
     const monthlySalesRow = db.prepare(`
       SELECT ROUND(SUM(price), 2) AS sales
       FROM sales_refunds
-      WHERE year = ? AND month = ?
-    `).get(currentYear, currentMonth) || {};
+      WHERE user_id = ? AND year = ? AND month = ?
+    `).get(userId, currentYear, currentMonth) || {};
 
     // Monthly budget
     const budgetRow = db.prepare(`
       SELECT budget_amount FROM monthly_budgets
-      WHERE year = ? AND month = ?
-    `).get(currentYear, currentMonth) || {};
+      WHERE user_id = ? AND year = ? AND month = ?
+    `).get(userId, currentYear, currentMonth) || {};
 
     const monthlySpent = monthlySpentRow.spent || 0;
     const monthlySales = monthlySalesRow.sales || 0;
@@ -540,8 +655,9 @@ app.get('/api/stats/summary', (req, res) => {
   }
 });
 
-app.get('/api/stats/publishers', (req, res) => {
+app.get('/api/stats/publishers', authMiddleware, (req, res) => {
   try {
+    const userId = req.user.id;
     const { year, month } = req.query;
     let query = `
       SELECT 
@@ -551,9 +667,9 @@ app.get('/api/stats/publishers', (req, res) => {
         COUNT(c.id) AS count
       FROM comics c
       LEFT JOIN publishers p ON c.publisher_id = p.id
-      WHERE 1=1
+      WHERE c.user_id = ?
     `;
-    const params = [];
+    const params = [userId];
     if (year && year !== 'all') { query += ' AND c.year = ?'; params.push(year); }
     if (month && month !== 'all') { query += ' AND c.month = ?'; params.push(month); }
     query += ' GROUP BY p.name ORDER BY total DESC';
@@ -572,8 +688,9 @@ app.get('/api/stats/publishers', (req, res) => {
   }
 });
 
-app.get('/api/stats/monthly-trends', (req, res) => {
+app.get('/api/stats/monthly-trends', authMiddleware, (req, res) => {
   try {
+    const userId = req.user.id;
     const { year } = req.query;
     const targetYear = year || '2026';
 
@@ -585,20 +702,20 @@ app.get('/api/stats/monthly-trends', (req, res) => {
     const comicRows = db.prepare(`
       SELECT month, ROUND(SUM(purchase_price), 2) as spent, COUNT(id) as count
       FROM comics
-      WHERE year = ?
+      WHERE user_id = ? AND year = ?
       GROUP BY month
-    `).all(targetYear);
+    `).all(userId, targetYear);
 
     const budgetRows = db.prepare(`
-      SELECT month, budget_amount FROM monthly_budgets WHERE year = ?
-    `).all(targetYear);
+      SELECT month, budget_amount FROM monthly_budgets WHERE user_id = ? AND year = ?
+    `).all(userId, targetYear);
 
     const salesRows = db.prepare(`
       SELECT month, ROUND(SUM(price), 2) as sales
       FROM sales_refunds
-      WHERE year = ?
+      WHERE user_id = ? AND year = ?
       GROUP BY month
-    `).all(targetYear);
+    `).all(userId, targetYear);
 
     const data = months.map(m => {
       const c = comicRows.find(r => r.month.toLowerCase() === m.toLowerCase()) || {};
@@ -623,12 +740,13 @@ app.get('/api/stats/monthly-trends', (req, res) => {
   }
 });
 
-app.get('/api/stats/yearly-comparison', (req, res) => {
+app.get('/api/stats/yearly-comparison', authMiddleware, (req, res) => {
   try {
+    const userId = req.user.id;
     const years = ['2023', '2024', '2025', '2026', '2027'];
     const rows = years.map(y => {
-      const c = db.prepare('SELECT ROUND(SUM(purchase_price), 2) as spent, COUNT(id) as count FROM comics WHERE year = ?').get(y) || {};
-      const s = db.prepare('SELECT ROUND(SUM(price), 2) as sales FROM sales_refunds WHERE year = ?').get(y) || {};
+      const c = db.prepare('SELECT ROUND(SUM(purchase_price), 2) as spent, COUNT(id) as count FROM comics WHERE user_id = ? AND year = ?').get(userId, y) || {};
+      const s = db.prepare('SELECT ROUND(SUM(price), 2) as sales FROM sales_refunds WHERE user_id = ? AND year = ?').get(userId, y) || {};
       const spent = c.spent || 0;
       const sales = s.sales || 0;
       return {
@@ -661,8 +779,9 @@ app.get('/api/metadata/search', async (req, res) => {
   }
 });
 
-app.post('/api/metadata/save-cover', async (req, res) => {
+app.post('/api/metadata/save-cover', authMiddleware, async (req, res) => {
   try {
+    const userId = req.user.id;
     const { imageUrl, comicId } = req.body;
     if (!imageUrl) return res.status(400).json({ error: 'URL immagine mancante' });
 
@@ -670,8 +789,8 @@ app.post('/api/metadata/save-cover', async (req, res) => {
     if (!localPath) return res.status(500).json({ error: 'Impossibile scaricare immagine' });
 
     if (comicId) {
-      db.prepare("UPDATE comics SET cover_url = ?, local_cover_path = ?, updated_at = datetime('now') WHERE id = ?")
-        .run(imageUrl, localPath, comicId);
+      db.prepare("UPDATE comics SET cover_url = ?, local_cover_path = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?")
+        .run(imageUrl, localPath, comicId, userId);
     }
 
     res.json({ localPath, coverUrl: imageUrl });
@@ -730,9 +849,10 @@ app.get('/api/proxy/image', (req, res) => {
 });
 
 // Auto-enrich comic metadata from HoVistoCose
-app.post('/api/comics/:id/enrich-hvc', async (req, res) => {
+app.post('/api/comics/:id/enrich-hvc', authMiddleware, async (req, res) => {
   try {
-    const comic = db.prepare('SELECT * FROM comics WHERE id = ?').get(req.params.id);
+    const userId = req.user.id;
+    const comic = db.prepare('SELECT * FROM comics WHERE id = ? AND user_id = ?').get(req.params.id, userId);
     if (!comic) return res.status(404).json({ error: 'Fumetto non trovato' });
 
     const results = await searchMetadata(comic.title, comic.issue_number || '', '');
@@ -748,45 +868,41 @@ app.post('/api/comics/:id/enrich-hvc', async (req, res) => {
           ean = COALESCE(?, ean),
           cover_url = COALESCE(?, cover_url),
           local_cover_path = COALESCE(?, local_cover_path),
+          notes = CASE 
+            WHEN ? IS NOT NULL AND (notes IS NULL OR notes NOT LIKE '%Prezzo originale:%')
+            THEN COALESCE(notes || ' | ', '') || 'Prezzo originale: ' || ?
+            ELSE notes 
+          END,
           updated_at = datetime('now')
-        WHERE id = ?
-      `).run(best.isbn || best.ean, best.ean || best.isbn, best.coverUrl, localCover, comic.id);
+        WHERE id = ? AND user_id = ?
+      `).run(
+        best.isbn || best.ean,
+        best.ean || best.isbn,
+        best.coverUrl,
+        localCover,
+        best.originalPrice,
+        best.originalPrice,
+        comic.id,
+        userId
+      );
 
-      const updated = db.prepare(`
-        SELECT c.*, p.name AS publisher_name, p.color AS publisher_color
-        FROM comics c LEFT JOIN publishers p ON c.publisher_id = p.id
-        WHERE c.id = ?
-      `).get(comic.id);
-
-      return res.json({ success: true, comic: updated });
+      const updated = db.prepare('SELECT * FROM comics WHERE id = ? AND user_id = ?').get(comic.id, userId);
+      return res.json({ success: true, enriched: true, comic: updated });
     }
-    res.json({ success: false, message: 'Nessun metadato trovato su HoVistoCose' });
+    res.json({ success: true, enriched: false, message: 'Nessun metadato trovato su HoVistoCose' });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// Batch enrich HVC comics from HoVistoCose
-app.post('/api/comics/enrich-hvc-batch', async (req, res) => {
+app.post('/api/comics/batch-enrich-hvc', authMiddleware, async (req, res) => {
   try {
-    const { year, month, limit = 50 } = req.body || {};
-    let query = `
-      SELECT * FROM comics 
-      WHERE channel = 'HVC / Preordine' 
-        AND purchase_price = 0 
-        AND (isbn IS NULL OR cover_url IS NULL)
-    `;
-    const params = [];
-    if (year && year !== 'all') {
-      query += ' AND year = ?';
-      params.push(year);
-    }
-    if (month && month !== 'all') {
-      query += ' AND month = ?';
-      params.push(month);
-    }
-    query += ' LIMIT ?';
-    params.push(Number(limit) || 50);
+    const userId = req.user.id;
+    const { year, month } = req.body;
+    let query = 'SELECT * FROM comics WHERE user_id = ? AND (cover_url IS NULL OR local_cover_path IS NULL OR isbn IS NULL)';
+    const params = [userId];
+    if (year) { query += ' AND year = ?'; params.push(year); }
+    if (month) { query += ' AND month = ?'; params.push(month); }
 
     const comics = db.prepare(query).all(...params);
     let enriched = 0;
@@ -807,8 +923,8 @@ app.post('/api/comics/enrich-hvc-batch', async (req, res) => {
               cover_url = COALESCE(?, cover_url),
               local_cover_path = COALESCE(?, local_cover_path),
               updated_at = datetime('now')
-            WHERE id = ?
-          `).run(best.isbn || best.ean, best.ean || best.isbn, best.coverUrl, localCover, c.id);
+            WHERE id = ? AND user_id = ?
+          `).run(best.isbn || best.ean, best.ean || best.isbn, best.coverUrl, localCover, c.id, userId);
           enriched++;
         }
         await new Promise(r => setTimeout(r, 400));
@@ -824,7 +940,7 @@ app.post('/api/comics/enrich-hvc-batch', async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// IMPORT & EXPORT
+// IMPORT & EXPORT (MULTI-USER)
 // -------------------------------------------------------------
 
 app.get('/api/import/onedrive-status', (req, res) => {
@@ -846,20 +962,21 @@ app.get('/api/import/onedrive-status', (req, res) => {
   }
 });
 
-app.post('/api/import/onedrive', (req, res) => {
+app.post('/api/import/onedrive', authMiddleware, (req, res) => {
   try {
-    const stats = importExcel();
+    const userId = req.user.id;
+    const stats = importExcel(null, userId);
     res.json({ success: true, stats });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-app.post('/api/import/upload', upload.single('excelFile'), (req, res) => {
+app.post('/api/import/upload', authMiddleware, upload.single('excelFile'), (req, res) => {
   try {
+    const userId = req.user.id;
     if (!req.file) return res.status(400).json({ error: 'Nessun file caricato' });
-    const stats = importExcel(req.file.path);
-    // Remove temp file
+    const stats = importExcel(req.file.path, userId);
     try { fs.unlinkSync(req.file.path); } catch (e) {}
     res.json({ success: true, stats });
   } catch (e) {
@@ -867,9 +984,10 @@ app.post('/api/import/upload', upload.single('excelFile'), (req, res) => {
   }
 });
 
-app.get('/api/export/excel', (req, res) => {
+app.get('/api/export/excel', authMiddleware, (req, res) => {
   try {
-    const buffer = exportToExcel();
+    const userId = req.user.id;
+    const buffer = exportToExcel(userId);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', 'attachment; filename="Fumetti_Export.xlsx"');
     res.send(buffer);
@@ -878,9 +996,10 @@ app.get('/api/export/excel', (req, res) => {
   }
 });
 
-app.get('/api/export/json', (req, res) => {
+app.get('/api/export/json', authMiddleware, (req, res) => {
   try {
-    const data = exportToJson();
+    const userId = req.user.id;
+    const data = exportToJson(userId);
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Content-Disposition', 'attachment; filename="Fumetti_Backup.json"');
     res.json(data);
@@ -889,7 +1008,7 @@ app.get('/api/export/json', (req, res) => {
   }
 });
 
-// Network information for mobile access (Local Wi-Fi + Global Remote Tunnel)
+// Network information for mobile access
 app.get('/api/network-info', (req, res) => {
   try {
     const interfaces = os.networkInterfaces();
@@ -934,11 +1053,9 @@ const frontendDist = path.join(__dirname, '..', 'frontend', 'dist');
 if (fs.existsSync(frontendDist)) {
   app.use(express.static(frontendDist, {
     setHeaders: (res, filePath) => {
-      // index.html and service worker should never be cached permanently
       if (filePath.endsWith('index.html') || filePath.endsWith('sw.js')) {
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       } else if (filePath.includes(path.sep + 'assets' + path.sep)) {
-        // Hashed JS/CSS assets can be safely cached long-term
         res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
       }
     }
@@ -953,7 +1070,7 @@ if (fs.existsSync(frontendDist)) {
   });
 }
 
-// Start Server on 0.0.0.0 for LAN/mobile access
+// Start Server
 const server = app.listen(PORT, '0.0.0.0', () => {
   let localIp = '127.0.0.1';
   try {
@@ -973,7 +1090,6 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`- Locale (PC): http://localhost:${PORT}`);
   console.log(`- Rete Locale (Wi-Fi): http://${localIp}:${PORT}`);
 
-  // Automatically initialize secure remote tunnel
   startTunnel(PORT).then(url => {
     if (url) {
       console.log(`- Accesso Remoto Globale (4G/5G/Fuori casa): ${url}`);

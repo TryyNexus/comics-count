@@ -11,6 +11,8 @@ import { AddEditComicModal } from './components/AddEditComicModal';
 import { ImportExportModal } from './components/ImportExportModal';
 import { MobileAppModal } from './components/MobileAppModal';
 import { MonthYearPickerModal } from './components/MonthYearPickerModal';
+import { AuthModal } from './components/AuthModal';
+import { User } from './types';
 import { 
   BookOpen, 
   LayoutGrid, 
@@ -26,7 +28,9 @@ import {
   Calendar,
   Sparkles,
   Loader2,
-  Smartphone
+  Smartphone,
+  LogOut,
+  User as UserIcon
 } from 'lucide-react';
 
 const MONTHS = [
@@ -37,6 +41,9 @@ const MONTHS = [
 const YEARS = ['2023', '2024', '2025', '2026', '2027'];
 
 export function App() {
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
+
   const [currentYear, setCurrentYear] = useState('2026');
   const [currentMonth, setCurrentMonth] = useState('Gennaio');
   // TABLE IS THE PRIMARY / DEFAULT VIEW AS REQUESTED
@@ -55,13 +62,40 @@ export function App() {
   const [isMobileModalOpen, setIsMobileModalOpen] = useState(false);
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
 
+  // Check login on startup
   useEffect(() => {
-    loadPublishers();
+    checkCurrentUser();
   }, []);
 
+  const checkCurrentUser = async () => {
+    try {
+      const user = await api.getMe();
+      setCurrentUser(user);
+    } catch {
+      setCurrentUser(null);
+    } finally {
+      setIsAuthChecking(false);
+    }
+  };
+
+  const handleLogout = () => {
+    api.logout();
+    setCurrentUser(null);
+    setComics([]);
+    setSummary(null);
+  };
+
   useEffect(() => {
-    loadComicsAndSummary();
-  }, [currentYear, currentMonth]);
+    if (currentUser) {
+      loadPublishers();
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (currentUser) {
+      loadComicsAndSummary();
+    }
+  }, [currentUser, currentYear, currentMonth]);
 
   const loadPublishers = async () => {
     try {
@@ -283,6 +317,23 @@ export function App() {
                 <Plus className="w-4 h-4" />
                 <span>Nuovo</span>
               </button>
+
+              {/* User badge & Logout */}
+              {currentUser && (
+                <div className="flex items-center gap-2 pl-2 border-l border-slate-800 ml-1">
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800/80 border border-slate-700/60 text-xs text-slate-200">
+                    <UserIcon className="w-3.5 h-3.5 text-indigo-400" />
+                    <span className="font-semibold max-w-[100px] truncate">{currentUser.username}</span>
+                  </div>
+                  <button
+                    onClick={handleLogout}
+                    className="p-1.5 rounded-lg bg-slate-800/60 hover:bg-rose-950/60 hover:text-rose-400 border border-slate-700/60 hover:border-rose-500/30 text-slate-400 transition cursor-pointer"
+                    title="Esci dall'account"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -327,6 +378,17 @@ export function App() {
                 <Plus className="w-4 h-4" />
                 <span>Nuovo</span>
               </button>
+
+              {currentUser && (
+                <button
+                  onClick={handleLogout}
+                  className="p-2 rounded-xl bg-slate-800 hover:bg-rose-950/60 hover:text-rose-400 border border-slate-700 text-slate-400 transition cursor-pointer"
+                  title={`Disconnetti (${currentUser.username})`}
+                  aria-label="Disconnetti"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              )}
             </div>
           </div>
 
@@ -584,6 +646,15 @@ export function App() {
         months={MONTHS}
         years={YEARS}
       />
+
+      {/* Authentication Modal when not logged in */}
+      {!currentUser && !isAuthChecking && (
+        <AuthModal
+          onSuccess={(user) => {
+            setCurrentUser(user);
+          }}
+        />
+      )}
     </div>
   );
 }
