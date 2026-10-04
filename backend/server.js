@@ -215,9 +215,16 @@ app.post('/api/comics', authMiddleware, async (req, res) => {
     }
 
     let localCoverPath = null;
-    if (cover_url && cover_url.startsWith('http')) {
-      localCoverPath = await downloadAndCacheCover(cover_url, 'new');
+    if (cover_url && String(cover_url).startsWith('http')) {
+      try {
+        localCoverPath = await downloadAndCacheCover(cover_url, 'new');
+      } catch (err) {
+        console.warn('Cover download skipped:', err.message);
+      }
     }
+
+    const cleanCoverPrice = Number(String(cover_price ?? 0).replace(',', '.')) || 0;
+    const cleanPurchasePrice = Number(String(purchase_price ?? 0).replace(',', '.')) || 0;
 
     const stmt = db.prepare(`
       INSERT INTO comics (
@@ -234,10 +241,26 @@ app.post('/api/comics', authMiddleware, async (req, res) => {
     `);
 
     const result = stmt.run(
-      userId, title, series || null, issue_number || null, variant_info || null, publisher_id || null,
-      year, month, release_date || null, purchase_date || null, Number(cover_price) || 0,
-      Number(purchase_price) || 0, isbn || null, ean || null, upc || null,
-      cover_url || null, localCoverPath, status || 'Acquistato', channel || 'Fumetteria', notes || null
+      userId, 
+      title ? String(title).trim() : null, 
+      series ? String(series).trim() : null, 
+      issue_number ? String(issue_number).trim() : null, 
+      variant_info ? String(variant_info).trim() : null, 
+      publisher_id ? Number(publisher_id) : null,
+      String(year), 
+      String(month), 
+      release_date || null, 
+      purchase_date || null, 
+      cleanCoverPrice,
+      cleanPurchasePrice, 
+      isbn ? String(isbn).trim() : null, 
+      ean ? String(ean).trim() : null, 
+      upc ? String(upc).trim() : null,
+      cover_url || null, 
+      localCoverPath, 
+      status || 'Acquistato', 
+      channel || 'Fumetteria', 
+      notes || null
     );
 
     const created = db.prepare(`
@@ -248,14 +271,21 @@ app.post('/api/comics', authMiddleware, async (req, res) => {
 
     res.json(created);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error('Error creating comic:', e);
+    res.status(500).json({ error: e.message || 'Errore nella creazione del fumetto' });
   }
 });
 
 app.put('/api/comics/:id', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
-    const id = req.params.id;
+    const rawId = req.params.id;
+    const id = Number(rawId);
+
+    if (!id || isNaN(id)) {
+      return res.status(400).json({ error: 'ID fumetto non valido' });
+    }
+
     const {
       title, series, issue_number, variant_info, publisher_id,
       year, month, release_date, purchase_date, cover_price,
@@ -263,14 +293,23 @@ app.put('/api/comics/:id', authMiddleware, async (req, res) => {
     } = req.body;
 
     // Verify ownership
-    const existing = db.prepare('SELECT id FROM comics WHERE id = ? AND user_id = ?').get(id, userId);
-    if (!existing) return res.status(404).json({ error: 'Fumetto non trovato' });
-
-    let localCoverPath = req.body.local_cover_path;
-    if (cover_url && cover_url.startsWith('http') && (!localCoverPath || !localCoverPath.includes('cover_'))) {
-      const cached = await downloadAndCacheCover(cover_url, id);
-      if (cached) localCoverPath = cached;
+    const existing = db.prepare('SELECT id, local_cover_path FROM comics WHERE id = ? AND user_id = ?').get(id, userId);
+    if (!existing) {
+      return res.status(404).json({ error: 'Fumetto non trovato o non accessibile' });
     }
+
+    let localCoverPath = req.body.local_cover_path || existing.local_cover_path || null;
+    if (cover_url && String(cover_url).startsWith('http') && (!localCoverPath || !localCoverPath.includes('cover_'))) {
+      try {
+        const cached = await downloadAndCacheCover(cover_url, id);
+        if (cached) localCoverPath = cached;
+      } catch (err) {
+        console.warn('Cover download skipped:', err.message);
+      }
+    }
+
+    const cleanCoverPrice = Number(String(cover_price ?? 0).replace(',', '.')) || 0;
+    const cleanPurchasePrice = Number(String(purchase_price ?? 0).replace(',', '.')) || 0;
 
     const stmt = db.prepare(`
       UPDATE comics SET
@@ -283,10 +322,27 @@ app.put('/api/comics/:id', authMiddleware, async (req, res) => {
     `);
 
     stmt.run(
-      title, series, issue_number, variant_info, publisher_id,
-      year, month, release_date, purchase_date, Number(cover_price) || 0,
-      Number(purchase_price) || 0, isbn, ean, upc, cover_url,
-      localCoverPath, status, channel, notes, id, userId
+      title ? String(title).trim() : null,
+      series ? String(series).trim() : null,
+      issue_number ? String(issue_number).trim() : null,
+      variant_info ? String(variant_info).trim() : null,
+      publisher_id ? Number(publisher_id) : null,
+      year ? String(year) : '2026',
+      month ? String(month) : 'Gennaio',
+      release_date || null,
+      purchase_date || null,
+      cleanCoverPrice,
+      cleanPurchasePrice,
+      isbn ? String(isbn).trim() : null,
+      ean ? String(ean).trim() : null,
+      upc ? String(upc).trim() : null,
+      cover_url || null,
+      localCoverPath,
+      status || 'Acquistato',
+      channel || 'Fumetteria',
+      notes || null,
+      id,
+      userId
     );
 
     const updated = db.prepare(`
@@ -297,7 +353,8 @@ app.put('/api/comics/:id', authMiddleware, async (req, res) => {
 
     res.json(updated);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error('Error updating comic:', e);
+    res.status(500).json({ error: e.message || 'Errore durante l\'aggiornamento del fumetto' });
   }
 });
 

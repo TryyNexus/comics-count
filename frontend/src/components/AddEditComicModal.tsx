@@ -175,6 +175,9 @@ export const AddEditComicModal: React.FC<AddEditComicModalProps> = ({
 
     setIsSaving(true);
     try {
+      const sanitizedCoverPrice = parseFloat(String(coverPrice).replace(',', '.')) || 0;
+      const sanitizedPurchasePrice = parseFloat(String(purchasePrice).replace(',', '.')) || 0;
+
       const payload: Partial<Comic> = {
         title: title.trim(),
         series: series.trim() || undefined,
@@ -185,8 +188,8 @@ export const AddEditComicModal: React.FC<AddEditComicModalProps> = ({
         month,
         release_date: releaseDate || undefined,
         purchase_date: purchaseDate || undefined,
-        cover_price: parseFloat(coverPrice) || 0,
-        purchase_price: parseFloat(purchasePrice) || 0,
+        cover_price: sanitizedCoverPrice,
+        purchase_price: sanitizedPurchasePrice,
         isbn: isbn.trim() || undefined,
         ean: isbn.trim() || undefined,
         cover_url: coverUrl.trim() || undefined,
@@ -196,7 +199,7 @@ export const AddEditComicModal: React.FC<AddEditComicModalProps> = ({
         notes: notes.trim() || undefined
       };
 
-      if (comicToEdit) {
+      if (comicToEdit && comicToEdit.id && comicToEdit.id > 0) {
         await api.updateComic(comicToEdit.id, payload);
       } else {
         await api.createComic(payload);

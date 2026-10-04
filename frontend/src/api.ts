@@ -172,7 +172,10 @@ export const api = {
       headers: authHeaders(),
       body: JSON.stringify(comic)
     });
-    if (!res.ok) throw new Error('Errore nell\'aggiornamento del fumetto');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Errore nell\'aggiornamento del fumetto');
+    }
     return res.json();
   },
 
@@ -182,7 +185,10 @@ export const api = {
       headers: authHeaders(),
       body: JSON.stringify({ status })
     });
-    if (!res.ok) throw new Error('Errore nell\'aggiornamento dello stato');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Errore nell\'aggiornamento dello stato');
+    }
   },
 
   deleteComic: async (id: number): Promise<void> => {
@@ -190,7 +196,10 @@ export const api = {
       method: 'DELETE',
       headers: authHeaders()
     });
-    if (!res.ok) throw new Error('Errore nella cancellazione del fumetto');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Errore nella cancellazione del fumetto');
+    }
   },
 
   // Publishers
