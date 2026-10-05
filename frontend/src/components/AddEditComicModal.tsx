@@ -13,6 +13,7 @@ import {
   BookOpen
 } from 'lucide-react';
 import { api } from '../api';
+import { getComicCoverUrl } from '../utils/coverHelper';
 
 interface AddEditComicModalProps {
   isOpen: boolean;
@@ -132,6 +133,7 @@ export const AddEditComicModal: React.FC<AddEditComicModalProps> = ({
   const handleSelectResult = (res: MetadataSearchResult) => {
     if (res.coverUrl) {
       setCoverUrl(res.coverUrl);
+      setLocalCoverPath(''); // Reset cached cover so the new cover is downloaded & displayed
     }
     if (res.isbn) {
       setIsbn(res.isbn);
@@ -561,6 +563,38 @@ export const AddEditComicModal: React.FC<AddEditComicModalProps> = ({
                 </div>
               </div>
             </div>
+
+            {(coverUrl || localCoverPath) && (
+              <div className="flex items-center gap-4 p-3 bg-slate-900/80 border border-slate-800 rounded-lg">
+                <div className="w-14 h-20 bg-slate-950 rounded border border-slate-700 overflow-hidden shrink-0">
+                  <img
+                    src={getComicCoverUrl({ local_cover_path: localCoverPath, cover_url: coverUrl }) || ''}
+                    alt="Anteprima copertina"
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLElement).style.display = 'none';
+                    }}
+                  />
+                </div>
+                <div className="text-xs space-y-1">
+                  <div className="font-semibold text-slate-200">Anteprima Copertina Attuale</div>
+                  <div className="text-slate-400 text-[11px] truncate max-w-md">
+                    {coverUrl || localCoverPath}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCoverUrl('');
+                      setLocalCoverPath('');
+                    }}
+                    className="text-[11px] text-red-400 hover:text-red-300 font-medium cursor-pointer"
+                  >
+                    Rimuovi copertina
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1">Note / Note Edizione</label>

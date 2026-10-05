@@ -293,19 +293,25 @@ app.put('/api/comics/:id', authMiddleware, async (req, res) => {
     } = req.body;
 
     // Verify ownership
-    const existing = db.prepare('SELECT id, local_cover_path FROM comics WHERE id = ? AND user_id = ?').get(id, userId);
+    const existing = db.prepare('SELECT id, cover_url, local_cover_path FROM comics WHERE id = ? AND user_id = ?').get(id, userId);
     if (!existing) {
       return res.status(404).json({ error: 'Fumetto non trovato o non accessibile' });
     }
 
-    let localCoverPath = req.body.local_cover_path || existing.local_cover_path || null;
-    if (cover_url && String(cover_url).startsWith('http') && (!localCoverPath || !localCoverPath.includes('cover_'))) {
+    const coverUrlChanged = (cover_url || null) !== (existing.cover_url || null);
+    let localCoverPath = req.body.local_cover_path !== undefined ? req.body.local_cover_path : existing.local_cover_path;
+
+    // If cover_url changed and is a valid external URL, or localCoverPath was cleared
+    if (cover_url && String(cover_url).startsWith('http') && (coverUrlChanged || !localCoverPath || !localCoverPath.includes('cover_'))) {
       try {
         const cached = await downloadAndCacheCover(cover_url, id);
         if (cached) localCoverPath = cached;
       } catch (err) {
         console.warn('Cover download skipped:', err.message);
       }
+    } else if (!cover_url && !req.body.local_cover_path) {
+      // If user deliberately removed the cover
+      localCoverPath = null;
     }
 
     const cleanCoverPrice = Number(String(cover_price ?? 0).replace(',', '.')) || 0;
@@ -316,7 +322,7 @@ app.put('/api/comics/:id', authMiddleware, async (req, res) => {
         title = ?, series = ?, issue_number = ?, variant_info = ?, publisher_id = ?,
         year = ?, month = ?, release_date = ?, purchase_date = ?, cover_price = ?,
         purchase_price = ?, isbn = ?, ean = ?, upc = ?, cover_url = ?,
-        local_cover_path = COALESCE(?, local_cover_path), status = ?, channel = ?,
+        local_cover_path = ?, status = ?, channel = ?,
         notes = ?, updated_at = datetime('now')
       WHERE id = ? AND user_id = ?
     `);
