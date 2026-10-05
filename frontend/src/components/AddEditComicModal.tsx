@@ -133,22 +133,24 @@ export const AddEditComicModal: React.FC<AddEditComicModalProps> = ({
     if (res.coverUrl) {
       setCoverUrl(res.coverUrl);
     }
-    if (res.isbn && !isbn) {
+    if (res.isbn) {
       setIsbn(res.isbn);
     }
-    // Auto-fill price if found and current price is 0 or empty
+    // Auto-fill price from metadata result (always updates the input, user can still freely edit it)
     if (res.price !== undefined && res.price !== null) {
-      if (!purchasePrice || purchasePrice === '0' || purchasePrice === '0.00') {
-        setPurchasePrice(String(res.price));
-      }
+      setPurchasePrice(String(res.price));
+    } else if (res.coverPrice !== undefined && res.coverPrice !== null) {
+      setPurchasePrice(String(res.coverPrice));
     }
+
     if (res.coverPrice !== undefined && res.coverPrice !== null) {
-      if (!coverPrice || coverPrice === '0' || coverPrice === '0.00') {
-        setCoverPrice(String(res.coverPrice));
-      }
+      setCoverPrice(String(res.coverPrice));
+    } else if (res.price !== undefined && res.price !== null) {
+      setCoverPrice(String(res.price));
     }
-    // If publisher is not selected, match with existing
-    if (!publisherId && res.publisher) {
+
+    // If publisher is not selected or matches
+    if (res.publisher) {
       const match = publishers.find(p => p.name.toLowerCase().includes(res.publisher!.toLowerCase()));
       if (match) setPublisherId(match.id);
     }
