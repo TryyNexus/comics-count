@@ -28,6 +28,28 @@ if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 const upload = multer({ dest: uploadDir });
 
 // -------------------------------------------------------------
+// REAL-TIME SYNC (SSE - SERVER SENT EVENTS)
+// -------------------------------------------------------------
+// Map of userId -> Set of express res streams
+const sseClients = new Map();
+
+function broadcastSyncEvent(userId, eventType, data = {}) {
+  const userSet = sseClients.get(Number(userId));
+  if (!userSet || userSet.size === 0) return;
+
+  const payload = JSON.stringify({ type: eventType, data, timestamp: Date.now() });
+  const message = `event: sync\ndata: ${payload}\n\n`;
+
+  for (const clientRes of userSet) {
+    try {
+      clientRes.write(message);
+    } catch (err) {
+      console.warn('Failed writing to SSE client:', err.message);
+    }
+  }
+}
+
+// -------------------------------------------------------------
 // AUTHENTICATION ROUTES (LOGIN, REGISTER, ME)
 // -------------------------------------------------------------
 
@@ -269,6 +291,7 @@ app.post('/api/comics', authMiddleware, async (req, res) => {
       WHERE c.id = ? AND c.user_id = ?
     `).get(result.lastInsertRowid, userId);
 
+    broadcastSyncEvent(userId, 'comic_created', { comic: created });
     res.json(created);
   } catch (e) {
     console.error('Error creating comic:', e);
@@ -357,6 +380,7 @@ app.put('/api/comics/:id', authMiddleware, async (req, res) => {
       WHERE c.id = ? AND c.user_id = ?
     `).get(id, userId);
 
+    broadcastSyncEvent(userId, 'comic_updated', { comic: updated });
     res.json(updated);
   } catch (e) {
     console.error('Error updating comic:', e);
@@ -370,6 +394,8 @@ app.patch('/api/comics/:id/status', authMiddleware, (req, res) => {
     const { status } = req.body;
     db.prepare("UPDATE comics SET status = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?")
       .run(status, req.params.id, userId);
+    
+    broadcastSyncEvent(userId, 'comic_status_changed', { id: Number(req.params.id), status });
     res.json({ success: true, id: req.params.id, status });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -380,6 +406,7 @@ app.delete('/api/comics/:id', authMiddleware, (req, res) => {
   try {
     const userId = req.user.id;
     db.prepare('DELETE FROM comics WHERE id = ? AND user_id = ?').run(req.params.id, userId);
+    broadcastSyncEvent(userId, 'comic_deleted', { id: Number(req.params.id) });
     res.json({ success: true, id: req.params.id });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -510,7 +537,9 @@ app.post('/api/sales', authMiddleware, (req, res) => {
     const { year, month, title, price, channel, notes } = req.body;
     const stmt = db.prepare('INSERT INTO sales_refunds (user_id, year, month, title, price, channel, notes) VALUES (?, ?, ?, ?, ?, ?, ?)');
     const result = stmt.run(userId, year, month || null, title, Number(price) || 0, channel || 'Vinted', notes || null);
-    res.json({ id: result.lastInsertRowid, year, month, title, price, channel, notes });
+    const item = { id: result.lastInsertRowid, year, month, title, price, channel, notes };
+    broadcastSyncEvent(userId, 'sales_updated', { item });
+    res.json(item);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -520,6 +549,7 @@ app.delete('/api/sales/:id', authMiddleware, (req, res) => {
   try {
     const userId = req.user.id;
     db.prepare('DELETE FROM sales_refunds WHERE id = ? AND user_id = ?').run(req.params.id, userId);
+    broadcastSyncEvent(userId, 'sales_updated', { id: Number(req.params.id) });
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -554,7 +584,9 @@ app.post('/api/orders', authMiddleware, (req, res) => {
     const { store_name, title, items_count, total_price, year, month, status, notes } = req.body;
     const stmt = db.prepare('INSERT INTO orders (user_id, store_name, title, items_count, total_price, year, month, status, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
     const result = stmt.run(userId, store_name, title, items_count || 1, Number(total_price) || 0, year || '2026', month || null, status || 'Completato', notes || null);
-    res.json({ id: result.lastInsertRowid, ...req.body });
+    const order = { id: result.lastInsertRowid, ...req.body };
+    broadcastSyncEvent(userId, 'orders_updated', { order });
+    res.json(order);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -564,6 +596,7 @@ app.delete('/api/orders/:id', authMiddleware, (req, res) => {
   try {
     const userId = req.user.id;
     db.prepare('DELETE FROM orders WHERE id = ? AND user_id = ?').run(req.params.id, userId);
+    broadcastSyncEvent(userId, 'orders_updated', { id: Number(req.params.id) });
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -610,6 +643,7 @@ app.post('/api/readings', authMiddleware, (req, res) => {
 
     if (comic_id) {
       db.prepare("UPDATE comics SET status = 'Letto', updated_at = datetime('now') WHERE id = ? AND user_id = ?").run(comic_id, userId);
+      broadcastSyncEvent(userId, 'comic_status_changed', { id: Number(comic_id), status: 'Letto' });
     }
 
     const created = db.prepare(`
@@ -629,6 +663,7 @@ app.post('/api/readings', authMiddleware, (req, res) => {
       WHERE r.id = ? AND r.user_id = ?
     `).get(result.lastInsertRowid, userId);
 
+    broadcastSyncEvent(userId, 'readings_updated', { reading: created });
     res.json(created);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -639,6 +674,7 @@ app.delete('/api/readings/:id', authMiddleware, (req, res) => {
   try {
     const userId = req.user.id;
     db.prepare('DELETE FROM readings WHERE id = ? AND user_id = ?').run(req.params.id, userId);
+    broadcastSyncEvent(userId, 'readings_updated', { id: Number(req.params.id) });
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -668,6 +704,7 @@ app.post('/api/budgets', authMiddleware, (req, res) => {
       VALUES (?, ?, ?, ?)
       ON CONFLICT(user_id, year, month) DO UPDATE SET budget_amount = excluded.budget_amount
     `).run(userId, year, month, Number(budget_amount) || 0);
+    broadcastSyncEvent(userId, 'budget_updated', { year, month, budget_amount });
     res.json({ success: true, year, month, budget_amount });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1055,6 +1092,9 @@ app.post('/api/comics/batch-enrich-hvc', authMiddleware, async (req, res) => {
     }
 
     res.json({ success: true, processed: comics.length, enriched });
+    if (enriched > 0) {
+      broadcastSyncEvent(userId, 'batch_enriched', { count: enriched, year, month });
+    }
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -1087,6 +1127,7 @@ app.post('/api/import/onedrive', authMiddleware, (req, res) => {
   try {
     const userId = req.user.id;
     const stats = importExcel(null, userId);
+    broadcastSyncEvent(userId, 'data_imported', { stats });
     res.json({ success: true, stats });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1099,6 +1140,7 @@ app.post('/api/import/upload', authMiddleware, upload.single('excelFile'), (req,
     if (!req.file) return res.status(400).json({ error: 'Nessun file caricato' });
     const stats = importExcel(req.file.path, userId);
     try { fs.unlinkSync(req.file.path); } catch (e) {}
+    broadcastSyncEvent(userId, 'data_imported', { stats });
     res.json({ success: true, stats });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1127,6 +1169,49 @@ app.get('/api/export/json', authMiddleware, (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// SSE Real-time events stream
+app.get('/api/sync/events', authMiddleware, (req, res) => {
+  const userId = Number(req.user.id);
+
+  // Set SSE headers
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no' // Prevent Nginx/Render buffering
+  });
+
+  // Add client to user's subscriber set
+  if (!sseClients.has(userId)) {
+    sseClients.set(userId, new Set());
+  }
+  const userSet = sseClients.get(userId);
+  userSet.add(res);
+
+  // Send initial ping to confirm connection
+  res.write(`event: connected\ndata: ${JSON.stringify({ userId, connectedAt: Date.now() })}\n\n`);
+
+  // Keep-alive heartbeat every 25 seconds
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(': ping\n\n');
+    } catch {
+      clearInterval(heartbeat);
+    }
+  }, 25000);
+
+  // Clean up when client disconnects
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    if (userSet) {
+      userSet.delete(res);
+      if (userSet.size === 0) {
+        sseClients.delete(userId);
+      }
+    }
+  });
 });
 
 // Network information for mobile access

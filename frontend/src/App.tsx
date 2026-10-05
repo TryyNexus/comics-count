@@ -30,7 +30,10 @@ import {
   Loader2,
   Smartphone,
   LogOut,
-  User as UserIcon
+  User as UserIcon,
+  Radio,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 
 const MONTHS = [
@@ -73,6 +76,7 @@ export function App() {
   const [summary, setSummary] = useState<MonthlySummary | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isEnrichingHvc, setIsEnrichingHvc] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'connected' | 'connecting' | 'disconnected'>('connecting');
 
   // Modals state
   const [isAddEditOpen, setIsAddEditOpen] = useState(false);
@@ -120,6 +124,62 @@ export function App() {
     }
   }, [currentUser, currentYear, currentMonth]);
 
+  // Real-time synchronization stream (SSE) across tabs/devices
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const unsubscribe = api.subscribeToSyncEvents(
+      (event) => {
+        // Handle incoming live sync events from server
+        if (event.type === 'comic_created') {
+          const newComic = event.data.comic;
+          if (newComic && String(newComic.year) === String(currentYear) && newComic.month === currentMonth) {
+            setComics(prev => {
+              if (prev.some(c => c.id === newComic.id)) return prev;
+              return [newComic, ...prev];
+            });
+            api.getSummary(currentYear, currentMonth).then(setSummary);
+          }
+        } else if (event.type === 'comic_updated') {
+          const updatedComic = event.data.comic;
+          if (updatedComic) {
+            if (String(updatedComic.year) === String(currentYear) && updatedComic.month === currentMonth) {
+              setComics(prev => {
+                const exists = prev.some(c => c.id === updatedComic.id);
+                if (exists) {
+                  return prev.map(c => c.id === updatedComic.id ? updatedComic : c);
+                } else {
+                  return [updatedComic, ...prev];
+                }
+              });
+            } else {
+              // Comic was moved to a different month/year
+              setComics(prev => prev.filter(c => c.id !== updatedComic.id));
+            }
+            api.getSummary(currentYear, currentMonth).then(setSummary);
+          }
+        } else if (event.type === 'comic_status_changed') {
+          const { id, status } = event.data;
+          setComics(prev => prev.map(c => c.id === id ? { ...c, status } : c));
+          api.getSummary(currentYear, currentMonth).then(setSummary);
+        } else if (event.type === 'comic_deleted') {
+          const { id } = event.data;
+          setComics(prev => prev.filter(c => c.id !== id));
+          api.getSummary(currentYear, currentMonth).then(setSummary);
+        } else if (event.type === 'sales_updated' || event.type === 'budget_updated' || event.type === 'data_imported' || event.type === 'batch_enriched') {
+          loadComicsAndSummary();
+        }
+      },
+      (status) => {
+        setSyncStatus(status);
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [currentUser, currentYear, currentMonth]);
+
   const loadPublishers = async () => {
     try {
       const data = await api.getPublishers();
@@ -146,21 +206,35 @@ export function App() {
   };
 
   const handleStatusChange = async (id: number, status: ComicStatus) => {
+    // Optimistic UI: update state instantly
+    const prevStatus = comics.find(c => c.id === id)?.status;
+    setComics(prev => prev.map(c => c.id === id ? { ...c, status } : c));
+
     try {
       await api.updateComicStatus(id, status);
-      setComics(prev => prev.map(c => c.id === id ? { ...c, status } : c));
       api.getSummary(currentYear, currentMonth).then(setSummary);
     } catch (e) {
+      // Rollback on failure
+      if (prevStatus) {
+        setComics(prev => prev.map(c => c.id === id ? { ...c, status: prevStatus } : c));
+      }
       alert('Errore aggiornamento stato');
     }
   };
 
   const handleDeleteComic = async (id: number) => {
     if (!confirm('Eliminare definitivamente questo fumetto?')) return;
+    // Optimistic UI: remove immediately
+    const removedComic = comics.find(c => c.id === id);
+    setComics(prev => prev.filter(c => c.id !== id));
+
     try {
       await api.deleteComic(id);
-      loadComicsAndSummary();
+      api.getSummary(currentYear, currentMonth).then(setSummary);
     } catch (e) {
+      if (removedComic) {
+        setComics(prev => [removedComic, ...prev]);
+      }
       alert('Errore eliminazione');
     }
   };
@@ -340,6 +414,32 @@ export function App() {
                 <span>Nuovo</span>
               </button>
 
+              {/* Real-time Live Sync Indicator */}
+              <div 
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950/60 border border-slate-800 text-[11px]"
+                title={
+                  syncStatus === 'connected' 
+                    ? 'Sincronizzazione in tempo reale attiva: le modifiche si riflettono all\'istante su tutti i dispositivi' 
+                    : syncStatus === 'connecting'
+                    ? 'Connessione al canale di sincronizzazione in corso...'
+                    : 'Riconnessione automatica al canale in tempo reale...'
+                }
+              >
+                <span className="relative flex h-2 w-2">
+                  {syncStatus === 'connected' && (
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  )}
+                  <span className={`relative inline-flex rounded-full h-2 w-2 ${
+                    syncStatus === 'connected' ? 'bg-emerald-500' : syncStatus === 'connecting' ? 'bg-amber-400' : 'bg-slate-500'
+                  }`}></span>
+                </span>
+                <span className={`font-mono text-[10px] font-bold ${
+                  syncStatus === 'connected' ? 'text-emerald-400' : syncStatus === 'connecting' ? 'text-amber-400' : 'text-slate-400'
+                }`}>
+                  {syncStatus === 'connected' ? 'LIVE' : syncStatus === 'connecting' ? 'SYNC...' : 'OFFLINE'}
+                </span>
+              </div>
+
               {/* User badge & Logout OR Login Button */}
               {currentUser ? (
                 <div className="flex items-center gap-2 pl-2 border-l border-slate-800 ml-1">
@@ -375,8 +475,11 @@ export function App() {
                 <img src="/logo.png" alt="Comics Count Logo" className="w-full h-full object-cover" />
               </div>
               <div className="truncate">
-                <span className="font-black text-sm tracking-tight text-white flex items-center gap-1">
+                <span className="font-black text-sm tracking-tight text-white flex items-center gap-1.5">
                   Comics Count <span className="text-[10px] text-indigo-400 font-mono px-1 py-0.2 rounded bg-indigo-500/10 border border-indigo-500/20">2.0</span>
+                  <span className={`inline-block w-1.5 h-1.5 rounded-full ${
+                    syncStatus === 'connected' ? 'bg-emerald-400 animate-pulse' : syncStatus === 'connecting' ? 'bg-amber-400' : 'bg-slate-500'
+                  }`} title={syncStatus === 'connected' ? 'Sincronizzazione in tempo reale' : syncStatus} />
                 </span>
               </div>
             </div>

@@ -461,5 +461,67 @@ export const api = {
       throw new Error(err.error || 'Errore durante l\'arricchimento batch');
     }
     return res.json();
+  },
+
+  // Real-time synchronization stream (SSE)
+  subscribeToSyncEvents: (
+    onEvent: (event: { type: string; data: any; timestamp: number }) => void,
+    onStatusChange?: (status: 'connected' | 'connecting' | 'disconnected') => void
+  ): (() => void) => {
+    const token = authStorage.getToken();
+    if (!token) return () => {};
+
+    let eventSource: EventSource | null = null;
+    let reconnectTimeout: any = null;
+    let isDisposed = false;
+
+    const connect = () => {
+      if (isDisposed) return;
+      onStatusChange?.('connecting');
+
+      const url = `${API_BASE}/sync/events?token=${encodeURIComponent(token)}`;
+      eventSource = new EventSource(url);
+
+      eventSource.addEventListener('connected', () => {
+        onStatusChange?.('connected');
+      });
+
+      eventSource.addEventListener('sync', (e: MessageEvent) => {
+        try {
+          const parsed = JSON.parse(e.data);
+          onEvent(parsed);
+        } catch (err) {
+          console.warn('Error parsing sync event:', err);
+        }
+      });
+
+      eventSource.onopen = () => {
+        onStatusChange?.('connected');
+      };
+
+      eventSource.onerror = () => {
+        onStatusChange?.('disconnected');
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+        if (!isDisposed) {
+          // Reconnect with 3-second delay
+          reconnectTimeout = setTimeout(connect, 3000);
+        }
+      };
+    };
+
+    connect();
+
+    return () => {
+      isDisposed = true;
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+      onStatusChange?.('disconnected');
+    };
   }
 };
