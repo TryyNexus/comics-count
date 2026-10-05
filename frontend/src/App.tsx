@@ -389,15 +389,6 @@ export function App() {
               )}
 
               <button
-                onClick={() => setIsImportExportOpen(true)}
-                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
-                title="Sincronizza con OneDrive o esporta"
-              >
-                <RefreshCw className="w-3.5 h-3.5 text-indigo-400" />
-                <span>OneDrive / Esporta</span>
-              </button>
-
-              <button
                 onClick={() => setIsMobileModalOpen(true)}
                 className="px-3 py-1.5 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
                 title="Apri Comics Count sul tuo smartphone o installa l'app"
@@ -493,15 +484,6 @@ export function App() {
                 aria-label="Info connessione smartphone"
               >
                 <Smartphone className="w-4 h-4 text-emerald-400" />
-              </button>
-
-              <button
-                onClick={() => setIsImportExportOpen(true)}
-                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition cursor-pointer"
-                title="OneDrive / Sincronizza"
-                aria-label="OneDrive / Sincronizza"
-              >
-                <RefreshCw className="w-4 h-4 text-indigo-400" />
               </button>
 
               <button
@@ -762,7 +744,7 @@ export function App() {
 
       {/* Footer */}
       <footer className="border-t border-slate-900 bg-slate-950 py-4 text-center text-xs text-slate-500 hidden md:block">
-        Comics Count 2.0 • Basato sul file personale OneDrive • Metadati & Copertine ufficiali da HoVistoCose
+        Comics Count 2.0 • Tracker Uscite, Contabilità & Metadati ufficiali da HoVistoCose
       </footer>
 
       {/* Modals */}
