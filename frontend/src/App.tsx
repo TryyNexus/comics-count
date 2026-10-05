@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Comic, Publisher, MonthlySummary, ComicStatus } from './types';
-import { api } from './api';
+import { api, authStorage } from './api';
 import { KPIBanner } from './components/KPIBanner';
 import { ComicsGrid } from './components/ComicsGrid';
 import { AccountingTable } from './components/AccountingTable';
@@ -41,13 +41,32 @@ const MONTHS = [
 const YEARS = ['2023', '2024', '2025', '2026', '2027'];
 
 export function App() {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [isAuthChecking, setIsAuthChecking] = useState(true);
+  const [currentUser, setCurrentUser] = useState<User | null>(() => authStorage.getUser());
+  const [isAuthChecking, setIsAuthChecking] = useState(() => !authStorage.getToken());
 
-  const [currentYear, setCurrentYear] = useState('2026');
-  const [currentMonth, setCurrentMonth] = useState('Gennaio');
+  const [currentYear, setCurrentYear] = useState<string>(() => localStorage.getItem('comics_count_year') || '2026');
+  const [currentMonth, setCurrentMonth] = useState<string>(() => localStorage.getItem('comics_count_month') || 'Gennaio');
   // TABLE IS THE PRIMARY / DEFAULT VIEW AS REQUESTED
-  const [activeTab, setActiveTab] = useState<'table' | 'grid' | 'dashboard' | 'orders' | 'readings'>('table');
+  const [activeTab, setActiveTab] = useState<'table' | 'grid' | 'dashboard' | 'orders' | 'readings'>(() => {
+    const saved = localStorage.getItem('comics_count_tab');
+    if (saved && ['table', 'grid', 'dashboard', 'orders', 'readings'].includes(saved)) {
+      return saved as any;
+    }
+    return 'table';
+  });
+
+  // Persist selections across refreshes/reopens
+  useEffect(() => {
+    localStorage.setItem('comics_count_year', currentYear);
+  }, [currentYear]);
+
+  useEffect(() => {
+    localStorage.setItem('comics_count_month', currentMonth);
+  }, [currentMonth]);
+
+  useEffect(() => {
+    localStorage.setItem('comics_count_tab', activeTab);
+  }, [activeTab]);
 
   const [comics, setComics] = useState<Comic[]>([]);
   const [publishers, setPublishers] = useState<Publisher[]>([]);

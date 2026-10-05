@@ -1,4 +1,4 @@
-const CACHE_NAME = 'comics-count-v2';
+const CACHE_NAME = 'comics-count-v3';
 
 self.addEventListener('install', () => {
   self.skipWaiting();
