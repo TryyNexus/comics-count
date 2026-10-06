@@ -1303,10 +1303,22 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   }).catch(e => console.error('[Tunnel] Errore:', e.message));
 });
 
+// Chiusura pulita (Render invia SIGTERM a ogni deploy/riavvio): salva il WAL nel file del database
+function shutdown() {
+  try { db.close(); } catch (e) {}
+  process.exit(0);
+}
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
     console.log(`Porta ${PORT} già occupata. Comics Count è già attivo.`);
   } else {
+    console.error('Errore avvio server:', err.message);
+  }
+});
+
     console.error('Errore avvio server:', err.message);
   }
 });
