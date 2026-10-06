@@ -3,7 +3,23 @@ const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcryptjs');
 
-const dbPath = path.join(__dirname, 'comics_count.db');
+// Cartella dei dati persistenti.
+// In locale resta la cartella del progetto; su Render va impostata la variabile
+// d'ambiente DATA_DIR sul percorso del Persistent Disk (es. /var/data),
+// altrimenti il database viene azzerato a ogni riavvio/deploy.
+const DATA_DIR = process.env.DATA_DIR || __dirname;
+fs.mkdirSync(DATA_DIR, { recursive: true });
+
+const dbPath = process.env.DB_PATH || path.join(DATA_DIR, 'comics_count.db');
+
+// Primo avvio sul disco persistente: parte da una copia del database incluso nel repository
+const seedPath = path.join(__dirname, 'comics_count.db');
+if (!fs.existsSync(dbPath) && fs.existsSync(seedPath) && path.resolve(seedPath) !== path.resolve(dbPath)) {
+  fs.copyFileSync(seedPath, dbPath);
+  console.log(`[DB] Database iniziale copiato in ${dbPath}`);
+}
+console.log(`[DB] Uso database: ${dbPath}`);
+
 const db = new Database(dbPath);
 
 // Enable WAL mode and foreign keys for high performance and integrity
@@ -181,6 +197,12 @@ function initDatabase() {
   for (const pub of defaultPublishers) {
     insertPub.run(pub.name, pub.color, pub.description);
   }
+}
+
+initDatabase();
+
+module.exports = { db, initDatabase, DATA_DIR };
+
 }
 
 initDatabase();
