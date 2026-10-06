@@ -7,8 +7,14 @@ const bcrypt = require('bcryptjs');
 // In locale resta la cartella del progetto; su Render va impostata la variabile
 // d'ambiente DATA_DIR sul percorso del Persistent Disk (es. /var/data),
 // altrimenti il database viene azzerato a ogni riavvio/deploy.
-const DATA_DIR = process.env.DATA_DIR || __dirname;
-fs.mkdirSync(DATA_DIR, { recursive: true });
+let DATA_DIR = process.env.DATA_DIR || __dirname;
+try {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.accessSync(DATA_DIR, fs.constants.W_OK);
+} catch (err) {
+  console.warn(`[DB] Cartella ${DATA_DIR} non utilizzabile (${err.message}). Uso la cartella del progetto.`);
+  DATA_DIR = __dirname;
+}
 
 const dbPath = process.env.DB_PATH || path.join(DATA_DIR, 'comics_count.db');
 
@@ -202,9 +208,3 @@ function initDatabase() {
 initDatabase();
 
 module.exports = { db, initDatabase, DATA_DIR };
-
-}
-
-initDatabase();
-
-module.exports = { db, initDatabase };
