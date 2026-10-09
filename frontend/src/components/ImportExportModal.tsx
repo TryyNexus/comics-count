@@ -31,6 +31,8 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
     lastModified?: string;
   } | null>(null);
 
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<any | null>(null);
+  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [importResult, setImportResult] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +40,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       checkOneDrive();
+      checkCloudSync();
       setImportResult(null);
       setError(null);
     }
@@ -49,6 +52,28 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
       setOneDriveStatus(status);
     } catch (e: any) {
       console.error(e);
+    }
+  };
+
+  const checkCloudSync = async () => {
+    try {
+      const status = await api.getCloudSyncStatus();
+      setCloudSyncStatus(status);
+    } catch (e: any) {
+      console.error(e);
+    }
+  };
+
+  const handleTriggerCloudSync = async () => {
+    setIsSyncingCloud(true);
+    setError(null);
+    try {
+      const res = await api.triggerCloudSyncNow();
+      setCloudSyncStatus(res);
+    } catch (e: any) {
+      setError(e.message || 'Errore durante il salvataggio nel Cloud');
+    } finally {
+      setIsSyncingCloud(false);
     }
   };
 
@@ -256,6 +281,50 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                 </div>
                 <Download className="w-4 h-4 text-slate-500 group-hover:text-amber-400 transition" />
               </a>
+            </div>
+          </div>
+
+          {/* Section 4: Cloud Sync & Persistent Storage */}
+          <div className="border-t border-slate-800 pt-5">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                <Cloud className="w-4 h-4 text-sky-400" />
+                Sincronizzazione Cloud (Salvataggio Permanente)
+              </h3>
+              {cloudSyncStatus?.provider && cloudSyncStatus.provider !== 'none' && (
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  {cloudSyncStatus.provider === 'supabase' ? 'Supabase Storage' : 'GitHub Gist'}
+                </span>
+              )}
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-xs font-medium text-slate-200">
+                    {cloudSyncStatus?.provider && cloudSyncStatus.provider !== 'none'
+                      ? 'Salvataggio automatico Cloud attivo: tutte le tue modifiche sono sincronizzate e protette.'
+                      : 'Modalità database locale: nessun Cloud Storage esterno configurato.'}
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-1">
+                    {cloudSyncStatus?.lastSyncTime
+                      ? `Ultimo salvataggio nel Cloud: ${new Date(cloudSyncStatus.lastSyncTime).toLocaleString('it-IT')}`
+                      : 'Nessun salvataggio recente registrato.'}
+                  </div>
+                </div>
+
+                {cloudSyncStatus?.provider && cloudSyncStatus.provider !== 'none' && (
+                  <button
+                    onClick={handleTriggerCloudSync}
+                    disabled={isSyncingCloud}
+                    className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-medium flex items-center gap-1.5 transition disabled:opacity-50 shrink-0"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncingCloud ? 'animate-spin' : ''}`} />
+                    {isSyncingCloud ? 'Salvataggio...' : 'Salva Ora'}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

@@ -22,3 +22,8 @@ temp*
 # OS files
 .DS_Store
 Thumbs.db
+
+# SQLite WAL temporary files
+*.db-shm
+*.db-wal
+

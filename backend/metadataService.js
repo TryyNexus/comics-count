@@ -435,6 +435,10 @@ async function downloadAndCacheCover(imageUrl, comicId = 'temp') {
         fileStream.on('finish', () => {
           fileStream.close();
           const publicUrl = `/uploads/covers/${fileName}`;
+          try {
+            const { uploadCover } = require('./cloudSync');
+            uploadCover(fileName, targetPath).catch(() => {});
+          } catch (e) {}
           resolve(publicUrl);
         });
       });

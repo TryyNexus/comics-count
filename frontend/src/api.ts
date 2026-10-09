@@ -523,5 +523,23 @@ export const api = {
       }
       onStatusChange?.('disconnected');
     };
+  },
+
+  getCloudSyncStatus: async () => {
+    const res = await fetch(`${API_BASE}/cloud-sync/status`, {
+      headers: authHeaders()
+    });
+    if (!res.ok) throw new Error('Errore recupero stato cloud sync');
+    return res.json();
+  },
+
+  triggerCloudSyncNow: async () => {
+    const res = await fetch(`${API_BASE}/cloud-sync/sync-now`, {
+      method: 'POST',
+      headers: authHeaders()
+    });
+    if (!res.ok) throw new Error('Errore sincronizzazione cloud');
+    return res.json();
   }
 };
+

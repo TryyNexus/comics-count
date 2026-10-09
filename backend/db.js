@@ -26,11 +26,39 @@ if (!fs.existsSync(dbPath) && fs.existsSync(seedPath) && path.resolve(seedPath) 
 }
 console.log(`[DB] Uso database: ${dbPath}`);
 
-const db = new Database(dbPath);
+let currentDb = new Database(dbPath);
+currentDb.pragma('journal_mode = WAL');
+currentDb.pragma('foreign_keys = ON');
 
-// Enable WAL mode and foreign keys for high performance and integrity
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+function reopenDb() {
+  try {
+    if (currentDb) {
+      try {
+        currentDb.pragma('wal_checkpoint(TRUNCATE)');
+        currentDb.close();
+      } catch (e) {}
+    }
+    currentDb = new Database(dbPath);
+    currentDb.pragma('journal_mode = WAL');
+    currentDb.pragma('foreign_keys = ON');
+    initDatabase();
+    console.log(`[DB] Database ricaricato con successo da ${dbPath}`);
+    return true;
+  } catch (err) {
+    console.error(`[DB] Errore ricaricamento database:`, err.message);
+    return false;
+  }
+}
+
+const db = new Proxy({}, {
+  get(target, prop) {
+    if (prop === 'reopenDb') return reopenDb;
+    if (prop === 'dbPath') return dbPath;
+    if (prop === '_rawDb') return currentDb;
+    const val = currentDb[prop];
+    return typeof val === 'function' ? val.bind(currentDb) : val;
+  }
+});
 
 function initDatabase() {
   db.exec(`
@@ -207,4 +235,5 @@ function initDatabase() {
 
 initDatabase();
 
-module.exports = { db, initDatabase, DATA_DIR };
+module.exports = { db, initDatabase, reopenDb, dbPath, DATA_DIR };
+

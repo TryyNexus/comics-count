@@ -5,18 +5,41 @@ const fs = require('fs');
 const os = require('os');
 const multer = require('multer');
 const bcrypt = require('bcryptjs');
-const { db, DATA_DIR } = require('./db');
+const { db, DATA_DIR, reopenDb, dbPath } = require('./db');
 const { authMiddleware, generateToken } = require('./auth');
 const { importExcel, findOneDriveExcelPath } = require('./excelImporter');
 const { exportToExcel, exportToJson } = require('./excelExporter');
 const { searchMetadata, downloadAndCacheCover, COVERS_DIR } = require('./metadataService');
 const { startTunnel, getTunnelUrl, getTunnelStatus } = require('./tunnelService');
+const {
+  initCloudSync,
+  scheduleSync,
+  syncDatabaseNow,
+  uploadCover,
+  downloadCoverIfMissing,
+  getSyncStatus
+} = require('./cloudSync');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
+
+// Recupero on-demand delle copertine da Cloud Storage se mancanti dal disco locale
+app.get('/uploads/covers/:filename', async (req, res, next) => {
+  const { filename } = req.params;
+  const localFile = path.join(COVERS_DIR, filename);
+  if (!fs.existsSync(localFile)) {
+    try {
+      const downloaded = await downloadCoverIfMissing(filename);
+      if (downloaded && fs.existsSync(localFile)) {
+        return res.sendFile(localFile);
+      }
+    } catch (e) {}
+  }
+  next();
+});
 
 // Serve uploaded covers statically
 app.use('/uploads/covers', express.static(COVERS_DIR));
@@ -34,6 +57,9 @@ const upload = multer({ dest: uploadDir });
 const sseClients = new Map();
 
 function broadcastSyncEvent(userId, eventType, data = {}) {
+  // Salva automaticamente le modifiche nel Cloud (debounced a 3s)
+  scheduleSync();
+
   const userSet = sseClients.get(Number(userId));
   if (!userSet || userSet.size === 0) return;
 
@@ -48,6 +74,22 @@ function broadcastSyncEvent(userId, eventType, data = {}) {
     }
   }
 }
+
+// -------------------------------------------------------------
+// CLOUD SYNC & BACKUP STATUS ROUTES
+// -------------------------------------------------------------
+app.get('/api/cloud-sync/status', (req, res) => {
+  res.json(getSyncStatus());
+});
+
+app.post('/api/cloud-sync/sync-now', async (req, res) => {
+  try {
+    await syncDatabaseNow();
+    res.json(getSyncStatus());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // -------------------------------------------------------------
 // AUTHENTICATION ROUTES (LOGIN, REGISTER, ME)
@@ -89,6 +131,7 @@ app.post('/api/auth/register', (req, res) => {
     };
 
     const token = generateToken(newUser);
+    scheduleSync(1000);
     res.json({
       user: newUser,
       token
@@ -159,6 +202,7 @@ app.post('/api/auth/reset-password', (req, res) => {
     const hash = bcrypt.hashSync(newPassword, salt);
 
     db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, user.id);
+    scheduleSync(1000);
 
     res.json({ success: true, message: 'Password aggiornata con successo! Ora puoi effettuare l\'accesso.' });
   } catch (err) {
@@ -499,6 +543,7 @@ app.post('/api/publishers', (req, res) => {
     const { name, color, description } = req.body;
     const stmt = db.prepare('INSERT INTO publishers (name, color, description) VALUES (?, ?, ?)');
     const result = stmt.run(name, color || '#6366f1', description || null);
+    scheduleSync();
     res.json({ id: result.lastInsertRowid, name, color, description });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -923,6 +968,9 @@ app.post('/api/metadata/save-cover', authMiddleware, async (req, res) => {
     if (comicId) {
       db.prepare("UPDATE comics SET cover_url = ?, local_cover_path = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?")
         .run(imageUrl, localPath, comicId, userId);
+      broadcastSyncEvent(userId, 'comic_updated', { id: Number(comicId), cover_url: imageUrl, local_cover_path: localPath });
+    } else {
+      scheduleSync();
     }
 
     res.json({ localPath, coverUrl: imageUrl });
@@ -938,6 +986,9 @@ app.post('/api/upload/cover', upload.single('cover'), (req, res) => {
     const finalName = `upload_${Date.now()}${ext}`;
     const target = path.join(COVERS_DIR, finalName);
     fs.renameSync(req.file.path, target);
+
+    // Carica copertina nel Cloud Storage se attivo
+    uploadCover(finalName, target).catch(() => {});
 
     const publicUrl = `/uploads/covers/${finalName}`;
     res.json({ localPath: publicUrl });
@@ -1277,7 +1328,7 @@ if (fs.existsSync(frontendDist)) {
 }
 
 // Start Server
-const server = app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', async () => {
   let localIp = '127.0.0.1';
   try {
     const interfaces = os.networkInterfaces();
@@ -1296,6 +1347,18 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`- Locale (PC): http://localhost:${PORT}`);
   console.log(`- Rete Locale (Wi-Fi): http://${localIp}:${PORT}`);
 
+  // Inizializza Cloud Sync all'avvio (scarica il database aggiornato dal Cloud)
+  try {
+    await initCloudSync({
+      db,
+      dbPath,
+      reopenDb,
+      coversDir: COVERS_DIR
+    });
+  } catch (e) {
+    console.warn('[CloudSync] Errore inizializzazione:', e.message);
+  }
+
   startTunnel(PORT).then(url => {
     if (url) {
       console.log(`- Accesso Remoto Globale (4G/5G/Fuori casa): ${url}`);
@@ -1303,8 +1366,14 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   }).catch(e => console.error('[Tunnel] Errore:', e.message));
 });
 
-// Chiusura pulita: esegue il checkpoint del WAL per scrivere tutte le modifiche sul file .db principale
-function shutdown() {
+// Chiusura pulita: esegue il salvataggio finale sul Cloud e il checkpoint del WAL
+async function shutdown() {
+  console.log('[Server] Ricevuto segnale di arresto, salvataggio finale nel cloud...');
+  try {
+    await syncDatabaseNow();
+  } catch (e) {
+    console.warn('[CloudSync] Errore salvataggio finale:', e.message);
+  }
   try {
     db.pragma('wal_checkpoint(TRUNCATE)');
     db.close();
