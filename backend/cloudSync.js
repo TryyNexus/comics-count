@@ -219,6 +219,11 @@ async function githubUploadGist(buffer) {
   return true;
 }
 
+function isValidSqliteBuffer(buf) {
+  if (!buf || buf.length < 100) return false;
+  return buf.subarray(0, 16).toString('utf8') === 'SQLite format 3\0';
+}
+
 /**
  * =========================================================================
  * CORE CLOUD SYNC LOGIC
@@ -251,8 +256,8 @@ async function initCloudSync(opts) {
       cloudBuffer = await githubDownloadGist();
     }
 
-    if (cloudBuffer && cloudBuffer.length > 0) {
-      console.log(`[CloudSync] Trovato database nel cloud (${Math.round(cloudBuffer.length / 1024)} KB). Ripristino in corso...`);
+    if (cloudBuffer && isValidSqliteBuffer(cloudBuffer)) {
+      console.log(`[CloudSync] Trovato database valido nel cloud (${Math.round(cloudBuffer.length / 1024)} KB). Ripristino in corso...`);
       // Salva il buffer su disco
       fs.writeFileSync(config.dbPath, cloudBuffer);
 
@@ -264,7 +269,7 @@ async function initCloudSync(opts) {
       syncState.lastSyncStatus = 'success';
       console.log('[CloudSync] Database ripristinato e sincronizzato con successo!');
     } else {
-      console.log('[CloudSync] Nessun database trovato nel cloud. Eseguo primo upload del database locale esistente...');
+      console.log('[CloudSync] Nessun database SQLite valido trovato nel cloud (o Gist inizializzato come testo). Eseguo upload del database locale reale...');
       await syncDatabaseNow();
     }
   } catch (err) {

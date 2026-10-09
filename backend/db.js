@@ -18,15 +18,45 @@ try {
 
 const dbPath = process.env.DB_PATH || path.join(DATA_DIR, 'comics_count.db');
 
-// Primo avvio sul disco persistente: parte da una copia del database incluso nel repository
+function isValidSqliteFile(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return false;
+    const stat = fs.statSync(filePath);
+    if (stat.size < 100) return false;
+    const fd = fs.openSync(filePath, 'r');
+    const buf = Buffer.alloc(16);
+    fs.readSync(fd, buf, 0, 16, 0);
+    fs.closeSync(fd);
+    return buf.toString('utf8') === 'SQLite format 3\0';
+  } catch (e) {
+    return false;
+  }
+}
+
+// Primo avvio o ripristino se corrotto: parte da una copia del database incluso nel repository
 const seedPath = path.join(__dirname, 'comics_count.db');
-if (!fs.existsSync(dbPath) && fs.existsSync(seedPath) && path.resolve(seedPath) !== path.resolve(dbPath)) {
-  fs.copyFileSync(seedPath, dbPath);
-  console.log(`[DB] Database iniziale copiato in ${dbPath}`);
+if (fs.existsSync(seedPath)) {
+  if (!fs.existsSync(dbPath) || !isValidSqliteFile(dbPath)) {
+    if (path.resolve(seedPath) !== path.resolve(dbPath)) {
+      fs.copyFileSync(seedPath, dbPath);
+      console.log(`[DB] Database valido ripristinato da seed in ${dbPath}`);
+    }
+  }
 }
 console.log(`[DB] Uso database: ${dbPath}`);
 
-let currentDb = new Database(dbPath);
+let currentDb;
+try {
+  currentDb = new Database(dbPath);
+} catch (dbErr) {
+  console.warn(`[DB] Errore apertura ${dbPath} (${dbErr.message}). Tentativo ripristino da seed...`);
+  if (fs.existsSync(seedPath) && path.resolve(seedPath) !== path.resolve(dbPath)) {
+    fs.copyFileSync(seedPath, dbPath);
+    currentDb = new Database(dbPath);
+  } else {
+    throw dbErr;
+  }
+}
 currentDb.pragma('journal_mode = WAL');
 currentDb.pragma('foreign_keys = ON');
 
