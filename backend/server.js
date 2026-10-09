@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const multer = require('multer');
 const bcrypt = require('bcryptjs');
-const { db } = require('./db');
+const { db, DATA_DIR } = require('./db');
 const { authMiddleware, generateToken } = require('./auth');
 const { importExcel, findOneDriveExcelPath } = require('./excelImporter');
 const { exportToExcel, exportToJson } = require('./excelExporter');
@@ -22,7 +22,7 @@ app.use(express.json());
 app.use('/uploads/covers', express.static(COVERS_DIR));
 
 // Configure multer for file uploads
-const uploadDir = path.join(__dirname, 'uploads', 'temp');
+const uploadDir = path.join(DATA_DIR || __dirname, 'uploads', 'temp');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 const upload = multer({ dest: uploadDir });
@@ -1303,9 +1303,15 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   }).catch(e => console.error('[Tunnel] Errore:', e.message));
 });
 
-// Chiusura pulita (Render invia SIGTERM a ogni deploy/riavvio): salva il WAL nel file del database
+// Chiusura pulita: esegue il checkpoint del WAL per scrivere tutte le modifiche sul file .db principale
 function shutdown() {
-  try { db.close(); } catch (e) {}
+  try {
+    db.pragma('wal_checkpoint(TRUNCATE)');
+    db.close();
+    console.log('[DB] Database salvato e chiuso correttamente.');
+  } catch (e) {
+    console.warn('[DB] Errore chiusura database:', e.message);
+  }
   process.exit(0);
 }
 process.on('SIGTERM', shutdown);
@@ -1315,10 +1321,6 @@ server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
     console.log(`Porta ${PORT} già occupata. Comics Count è già attivo.`);
   } else {
-    console.error('Errore avvio server:', err.message);
-  }
-});
-
     console.error('Errore avvio server:', err.message);
   }
 });

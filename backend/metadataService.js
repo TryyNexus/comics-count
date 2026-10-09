@@ -2,9 +2,9 @@ const https = require('https');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { db } = require('./db');
+const { db, DATA_DIR } = require('./db');
 
-const COVERS_DIR = path.join(__dirname, 'uploads', 'covers');
+const COVERS_DIR = path.join(DATA_DIR || __dirname, 'uploads', 'covers');
 if (!fs.existsSync(COVERS_DIR)) {
   fs.mkdirSync(COVERS_DIR, { recursive: true });
 }
