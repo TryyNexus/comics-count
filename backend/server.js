@@ -677,12 +677,22 @@ app.post('/api/sales', authMiddleware, (req, res) => {
 app.put('/api/sales/:id', authMiddleware, (req, res) => {
   try {
     const userId = req.user.id;
+    const saleId = Number(req.params.id);
     const { year, month, title, price, channel, notes, date, comic_id, markAsSold } = req.body;
+
+    const existing = db.prepare('SELECT * FROM sales_refunds WHERE id = ?').get(saleId);
+    if (!existing) {
+      return res.status(404).json({ error: 'Vendita non trovata' });
+    }
+    if (existing.user_id && existing.user_id !== userId) {
+      return res.status(403).json({ error: 'Non autorizzato a modificare questa vendita' });
+    }
+
     db.prepare(`
       UPDATE sales_refunds
       SET year = ?, month = ?, title = ?, price = ?, channel = ?, notes = ?, date = ?, comic_id = ?
-      WHERE id = ? AND user_id = ?
-    `).run(year, month || null, title, Number(price) || 0, channel || 'Vinted', notes || null, date || null, comic_id ? Number(comic_id) : null, req.params.id, userId);
+      WHERE id = ?
+    `).run(year, month || null, title, Number(price) || 0, channel || 'Vinted', notes || null, date || null, comic_id ? Number(comic_id) : null, saleId);
 
     if (markAsSold && comic_id) {
       db.prepare("UPDATE comics SET status = 'Venduto', updated_at = datetime('now') WHERE id = ? AND user_id = ?")
@@ -695,8 +705,8 @@ app.put('/api/sales/:id', authMiddleware, (req, res) => {
              c.cover_url, c.local_cover_path, c.series, c.issue_number, c.purchase_price, c.status as comic_status
       FROM sales_refunds s
       LEFT JOIN comics c ON s.comic_id = c.id
-      WHERE s.id = ? AND s.user_id = ?
-    `).get(req.params.id, userId);
+      WHERE s.id = ?
+    `).get(saleId);
 
     broadcastSyncEvent(userId, 'sales_updated', { item });
     res.json(item);
@@ -708,8 +718,16 @@ app.put('/api/sales/:id', authMiddleware, (req, res) => {
 app.delete('/api/sales/:id', authMiddleware, (req, res) => {
   try {
     const userId = req.user.id;
-    db.prepare('DELETE FROM sales_refunds WHERE id = ? AND user_id = ?').run(req.params.id, userId);
-    broadcastSyncEvent(userId, 'sales_updated', { id: Number(req.params.id) });
+    const saleId = Number(req.params.id);
+    const existing = db.prepare('SELECT * FROM sales_refunds WHERE id = ?').get(saleId);
+    if (!existing) {
+      return res.json({ success: true });
+    }
+    if (existing.user_id && existing.user_id !== userId) {
+      return res.status(403).json({ error: 'Non autorizzato a eliminare questa vendita' });
+    }
+    db.prepare('DELETE FROM sales_refunds WHERE id = ?').run(saleId);
+    broadcastSyncEvent(userId, 'sales_updated', { id: saleId });
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });

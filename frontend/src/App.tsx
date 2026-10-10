@@ -52,9 +52,9 @@ export function App() {
   const [currentYear, setCurrentYear] = useState<string>(() => localStorage.getItem('comics_count_year') || '2026');
   const [currentMonth, setCurrentMonth] = useState<string>(() => localStorage.getItem('comics_count_month') || 'Gennaio');
   // TABLE IS THE PRIMARY / DEFAULT VIEW AS REQUESTED
-  const [activeTab, setActiveTab] = useState<'table' | 'grid' | 'dashboard' | 'sales' | 'orders' | 'readings'>(() => {
+  const [activeTab, setActiveTab] = useState<'table' | 'grid' | 'dashboard' | 'sales' | 'readings'>(() => {
     const saved = localStorage.getItem('comics_count_tab');
-    if (saved && ['table', 'grid', 'dashboard', 'sales', 'orders', 'readings'].includes(saved)) {
+    if (saved && ['table', 'grid', 'dashboard', 'sales', 'readings'].includes(saved)) {
       return saved as any;
     }
     return 'table';
@@ -602,20 +602,6 @@ export function App() {
               <span>Vendite</span>
             </button>
 
-            {isTryyNexus && (
-              <button
-                onClick={() => setActiveTab('orders')}
-                className={`px-3.5 py-1.5 rounded-xl font-medium flex items-center gap-2 transition cursor-pointer shrink-0 active:scale-98 ${
-                  activeTab === 'orders'
-                    ? 'bg-white/12 text-white border border-white/20 shadow-xs'
-                    : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
-                }`}
-              >
-                <Package className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Preordini HVC</span>
-              </button>
-            )}
-
             <button
               onClick={() => setActiveTab('readings')}
               className={`px-3.5 py-1.5 rounded-xl font-medium flex items-center gap-2 transition cursor-pointer shrink-0 active:scale-98 ${
@@ -681,11 +667,6 @@ export function App() {
         {/* View: Vendite */}
         {activeTab === 'sales' && (
           <SalesView currentYear={currentYear} currentMonth={currentMonth} />
-        )}
-
-        {/* View: Preordini HVC & Store */}
-        {activeTab === 'orders' && (
-          <OrdersView currentYear={currentYear} />
         )}
 
         {/* View: Diario Letture */}

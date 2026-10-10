@@ -292,7 +292,10 @@ export const api = {
       headers: authHeaders(),
       body: JSON.stringify(sale)
     });
-    if (!res.ok) throw new Error('Errore nell\'aggiornamento della vendita');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Errore nell\'aggiornamento della vendita');
+    }
     return res.json();
   },
 
@@ -301,7 +304,10 @@ export const api = {
       method: 'DELETE',
       headers: authHeaders()
     });
-    if (!res.ok) throw new Error('Errore nella cancellazione');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Errore nella cancellazione della vendita');
+    }
   },
 
   // Orders
