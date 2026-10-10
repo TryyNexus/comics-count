@@ -313,10 +313,10 @@ export function App() {
   const isTryyNexus = currentUser?.username?.toLowerCase() === 'tryy_nexus';
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+    <div className="min-h-screen bg-[#090a0f] text-slate-100 flex flex-col font-sans selection:bg-indigo-500/30 selection:text-white">
       {/* Top Navigation Bar with Safe Area Top Support */}
       <header 
-        className="sticky top-0 z-40 bg-slate-900/95 border-b border-slate-800 backdrop-blur-md shadow-md"
+        className="sticky top-0 z-40 glass-surface border-b border-white/6 shadow-xs"
         style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
       >
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
@@ -324,55 +324,55 @@ export function App() {
           <div className="hidden md:flex items-center justify-between h-16 gap-4">
             {/* Logo */}
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl overflow-hidden shadow-lg shadow-indigo-500/20 border border-slate-800 shrink-0 bg-slate-900">
+              <div className="w-9 h-9 rounded-xl overflow-hidden shadow-md shadow-indigo-500/10 border border-white/10 shrink-0 bg-[#0f1118]">
                 <img src="/logo.png" alt="Comics Count Logo" className="w-full h-full object-cover" />
               </div>
               <div>
-                <span className="font-extrabold text-base tracking-tight text-white flex items-center gap-1.5">
-                  Comics Count <span className="text-indigo-400 font-mono text-xs font-semibold px-1.5 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/20">2.0</span>
+                <span className="font-bold text-sm tracking-tight text-white flex items-center gap-1.5">
+                  Comics Count <span className="text-indigo-400 font-mono text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/20">2.0</span>
                 </span>
-                <span className="text-[11px] text-slate-400 block -mt-0.5">
+                <span className="text-[11px] text-slate-400 block -mt-0.5 font-normal">
                   Tracker Uscite, HoVistoCose & Contabilità
                 </span>
               </div>
             </div>
 
             {/* Desktop Temporal Selector (Year & Month) */}
-            <div className="flex items-center gap-1 bg-slate-950/80 border border-slate-800 p-1 rounded-xl shadow-inner">
+            <div className="flex items-center gap-1 bg-white/4 border border-white/8 p-1 rounded-xl shadow-inner backdrop-blur-md">
               <button 
                 onClick={handlePrevMonth}
-                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition cursor-pointer"
+                className="p-1.5 rounded-lg hover:bg-white/8 text-slate-400 hover:text-white transition cursor-pointer active:scale-95"
                 title="Mese precedente"
               >
-                <ChevronLeft className="w-4 h-4" />
+                <ChevronLeft className="w-3.5 h-3.5" />
               </button>
 
               <select
                 value={currentMonth}
                 onChange={e => setCurrentMonth(e.target.value)}
-                className="bg-transparent text-xs font-bold text-white px-2 py-1 focus:outline-hidden cursor-pointer"
+                className="bg-transparent text-xs font-semibold text-white px-2 py-1 focus:outline-hidden cursor-pointer"
               >
                 {MONTHS.map(m => (
-                  <option key={m} value={m} className="bg-slate-900 text-white">{m}</option>
+                  <option key={m} value={m} className="bg-[#0f1118] text-white">{m}</option>
                 ))}
               </select>
 
               <select
                 value={currentYear}
                 onChange={e => setCurrentYear(e.target.value)}
-                className="bg-transparent text-xs font-bold font-mono text-indigo-400 px-2 py-1 focus:outline-hidden cursor-pointer border-l border-slate-800"
+                className="bg-transparent text-xs font-semibold font-mono text-indigo-400 px-2 py-1 focus:outline-hidden cursor-pointer border-l border-white/8"
               >
                 {YEARS.map(y => (
-                  <option key={y} value={y} className="bg-slate-900 text-white">{y}</option>
+                  <option key={y} value={y} className="bg-[#0f1118] text-white">{y}</option>
                 ))}
               </select>
 
               <button 
                 onClick={handleNextMonth}
-                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition cursor-pointer"
+                className="p-1.5 rounded-lg hover:bg-white/8 text-slate-400 hover:text-white transition cursor-pointer active:scale-95"
                 title="Mese successivo"
               >
-                <ChevronRight className="w-4 h-4" />
+                <ChevronRight className="w-3.5 h-3.5" />
               </button>
             </div>
 
@@ -553,79 +553,79 @@ export function App() {
           </div>
 
           {/* Desktop Sub Navigation Tabs */}
-          <div className="hidden md:flex items-center gap-2 overflow-x-auto py-2 border-t border-slate-800/80 text-xs">
+          <div className="hidden md:flex items-center gap-1.5 overflow-x-auto py-2 border-t border-white/6 text-xs">
             <button
               onClick={() => setActiveTab('table')}
-              className={`px-3.5 py-1.5 rounded-lg font-bold flex items-center gap-2 transition cursor-pointer shrink-0 ${
+              className={`px-3.5 py-1.5 rounded-xl font-medium flex items-center gap-2 transition cursor-pointer shrink-0 active:scale-98 ${
                 activeTab === 'table'
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-1 ring-indigo-400/50'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                  ? 'bg-white/12 text-white border border-white/20 shadow-xs'
+                  : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
               }`}
             >
-              <Table className="w-4 h-4" />
-              <span>Tabella Contabile (Principale)</span>
+              <Table className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Tabella Contabile</span>
             </button>
 
             <button
               onClick={() => setActiveTab('grid')}
-              className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-2 transition cursor-pointer shrink-0 ${
+              className={`px-3.5 py-1.5 rounded-xl font-medium flex items-center gap-2 transition cursor-pointer shrink-0 active:scale-98 ${
                 activeTab === 'grid'
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                  ? 'bg-white/12 text-white border border-white/20 shadow-xs'
+                  : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
               }`}
             >
-              <LayoutGrid className="w-3.5 h-3.5" />
-              Griglia Copertine
+              <LayoutGrid className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Griglia Copertine</span>
             </button>
 
             <button
               onClick={() => setActiveTab('dashboard')}
-              className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-2 transition cursor-pointer shrink-0 ${
+              className={`px-3.5 py-1.5 rounded-xl font-medium flex items-center gap-2 transition cursor-pointer shrink-0 active:scale-98 ${
                 activeTab === 'dashboard'
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                  ? 'bg-white/12 text-white border border-white/20 shadow-xs'
+                  : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
               }`}
             >
-              <PieChart className="w-3.5 h-3.5" />
-              Statistiche
+              <PieChart className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Statistiche</span>
             </button>
 
             <button
               onClick={() => setActiveTab('sales')}
-              className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-2 transition cursor-pointer shrink-0 ${
+              className={`px-3.5 py-1.5 rounded-xl font-medium flex items-center gap-2 transition cursor-pointer shrink-0 active:scale-98 ${
                 activeTab === 'sales'
-                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20 ring-1 ring-emerald-400/40'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-xs'
+                  : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
               }`}
             >
-              <DollarSign className="w-3.5 h-3.5" />
-              Vendite
+              <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Vendite</span>
             </button>
 
             {isTryyNexus && (
               <button
                 onClick={() => setActiveTab('orders')}
-                className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-2 transition cursor-pointer shrink-0 ${
+                className={`px-3.5 py-1.5 rounded-xl font-medium flex items-center gap-2 transition cursor-pointer shrink-0 active:scale-98 ${
                   activeTab === 'orders'
-                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                    ? 'bg-white/12 text-white border border-white/20 shadow-xs'
+                    : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
                 }`}
               >
-                <Package className="w-3.5 h-3.5" />
-                Preordini HVC & Store
+                <Package className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Preordini HVC</span>
               </button>
             )}
 
             <button
               onClick={() => setActiveTab('readings')}
-              className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-2 transition cursor-pointer shrink-0 ${
+              className={`px-3.5 py-1.5 rounded-xl font-medium flex items-center gap-2 transition cursor-pointer shrink-0 active:scale-98 ${
                 activeTab === 'readings'
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                  ? 'bg-white/12 text-white border border-white/20 shadow-xs'
+                  : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
               }`}
             >
-              <BookMarked className="w-3.5 h-3.5" />
-              Diario Letture
+              <BookMarked className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Diario Letture</span>
             </button>
           </div>
         </div>
@@ -696,33 +696,33 @@ export function App() {
 
       {/* Mobile Fixed Bottom Navigation Bar */}
       <div 
-        className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 border-t border-slate-800 backdrop-blur-md flex items-center justify-around py-2 px-1 shadow-2xl"
-        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.5rem)' }}
+        className="md:hidden fixed bottom-0 left-0 right-0 z-40 glass-surface border-t border-white/8 flex items-center justify-around py-1.5 px-2 shadow-2xl"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.4rem)' }}
       >
         <button
           onClick={() => setActiveTab('table')}
-          className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${
-            activeTab === 'table' ? 'text-indigo-400' : 'text-slate-400 hover:text-slate-200'
+          className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl text-[10px] font-medium transition cursor-pointer active:scale-95 ${
+            activeTab === 'table' ? 'text-white font-semibold' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
-          <Table className="w-4 h-4" />
+          <Table className={`w-4 h-4 ${activeTab === 'table' ? 'text-indigo-400' : 'text-slate-400'}`} />
           <span>Tabella</span>
         </button>
 
         <button
           onClick={() => setActiveTab('grid')}
-          className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${
-            activeTab === 'grid' ? 'text-indigo-400' : 'text-slate-400 hover:text-slate-200'
+          className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl text-[10px] font-medium transition cursor-pointer active:scale-95 ${
+            activeTab === 'grid' ? 'text-white font-semibold' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
-          <LayoutGrid className="w-4 h-4" />
+          <LayoutGrid className={`w-4 h-4 ${activeTab === 'grid' ? 'text-indigo-400' : 'text-slate-400'}`} />
           <span>Copertine</span>
         </button>
 
         {/* Center Quick Add Button */}
         <button
           onClick={() => { setComicToEdit(null); setIsAddEditOpen(true); }}
-          className="w-11 h-11 -mt-5 rounded-full bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-600/40 ring-4 ring-slate-950 transition active:scale-95 cursor-pointer"
+          className="w-11 h-11 -mt-4 rounded-full bg-indigo-600 hover:bg-indigo-500 flex items-center justify-center text-white shadow-lg shadow-indigo-600/30 ring-4 ring-[#090a0f] transition active:scale-90 cursor-pointer"
           title="Nuovo fumetto"
         >
           <Plus className="w-5 h-5 stroke-2" />
@@ -730,21 +730,21 @@ export function App() {
 
         <button
           onClick={() => setActiveTab('sales')}
-          className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${
-            activeTab === 'sales' ? 'text-emerald-400 font-black' : 'text-slate-400 hover:text-slate-200'
+          className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl text-[10px] font-medium transition cursor-pointer active:scale-95 ${
+            activeTab === 'sales' ? 'text-emerald-300 font-semibold' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
-          <DollarSign className="w-4 h-4" />
+          <DollarSign className={`w-4 h-4 ${activeTab === 'sales' ? 'text-emerald-400' : 'text-slate-400'}`} />
           <span>Vendite</span>
         </button>
 
         <button
           onClick={() => setActiveTab('readings')}
-          className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${
-            activeTab === 'readings' ? 'text-indigo-400' : 'text-slate-400 hover:text-slate-200'
+          className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl text-[10px] font-medium transition cursor-pointer active:scale-95 ${
+            activeTab === 'readings' ? 'text-white font-semibold' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
-          <BookMarked className="w-4 h-4" />
+          <BookMarked className={`w-4 h-4 ${activeTab === 'readings' ? 'text-indigo-400' : 'text-slate-400'}`} />
           <span>Letture</span>
         </button>
       </div>

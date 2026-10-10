@@ -302,21 +302,21 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
   return (
     <div className="space-y-6 pb-16">
       {/* 1. Header & Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900/60 p-5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 glass-surface p-5 sm:p-6 rounded-2xl shadow-xs">
         <div>
-          <div className="flex items-center gap-2.5">
-            <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              <DollarSign className="w-6 h-6" />
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+              <DollarSign className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
+              <h1 className="text-base sm:text-lg font-bold text-white tracking-tight flex items-center gap-2">
                 Registro Vendite & Rimborsi
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-white/8 text-emerald-300 border border-white/10 font-mono">
                   {filteredSales.length} {filteredSales.length === 1 ? 'vendita' : 'vendite'}
                 </span>
               </h1>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Traccia i fumetti venduti su Vinted, eBay o privati (sia della tua collezione che non registrati)
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Traccia i fumetti venduti su Vinted, eBay o privati con calcolo automatico del profitto
               </p>
             </div>
           </div>
@@ -324,7 +324,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
 
         <button
           onClick={handleOpenAddModal}
-          className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition shadow-lg shadow-emerald-600/20 cursor-pointer shrink-0"
+          className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center justify-center gap-2 transition shadow-lg shadow-emerald-600/25 active:scale-98 cursor-pointer shrink-0"
         >
           <Plus className="w-4 h-4" />
           Registra Nuova Vendita
@@ -332,68 +332,76 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
       </div>
 
       {/* 2. KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 shadow-sm">
-          <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-3.5">
+        <div className="glass-surface p-4.5 rounded-2xl shadow-xs">
+          <div className="flex items-center justify-between text-slate-400 text-[11px] mb-1.5 font-medium">
             <span>Totale Incassato</span>
-            <DollarSign className="w-4 h-4 text-emerald-400" />
+            <div className="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+              <DollarSign className="w-3.5 h-3.5" />
+            </div>
           </div>
-          <div className="text-2xl font-black text-emerald-400 font-mono">
-            +{stats.totalRevenue.toFixed(2)} €
+          <div className="text-2xl font-bold text-emerald-400 font-mono tracking-tight">
+            +{stats.totalRevenue.toFixed(2)} <span className="text-sm font-sans font-normal text-slate-400">€</span>
           </div>
-          <div className="text-[11px] text-slate-500 mt-1">
-            Ricavo totale dalle vendite
+          <div className="text-[11px] text-slate-400 mt-1">
+            Ricavo lordo transazioni
           </div>
         </div>
 
-        <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 shadow-sm">
-          <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
+        <div className="glass-surface p-4.5 rounded-2xl shadow-xs">
+          <div className="flex items-center justify-between text-slate-400 text-[11px] mb-1.5 font-medium">
             <span>Fumetti Venduti</span>
-            <ShoppingBag className="w-4 h-4 text-sky-400" />
+            <div className="w-6 h-6 rounded-lg bg-sky-500/10 text-sky-400 flex items-center justify-center">
+              <ShoppingBag className="w-3.5 h-3.5" />
+            </div>
           </div>
-          <div className="text-2xl font-black text-white font-mono">
-            {stats.count}
+          <div className="text-2xl font-bold text-white font-mono tracking-tight">
+            {stats.count} <span className="text-sm font-sans font-normal text-slate-400">volumi</span>
           </div>
-          <div className="text-[11px] text-slate-500 mt-1">
+          <div className="text-[11px] text-slate-400 mt-1">
             Transazioni completate
           </div>
         </div>
 
-        <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 shadow-sm">
-          <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
+        <div className="glass-surface p-4.5 rounded-2xl shadow-xs">
+          <div className="flex items-center justify-between text-slate-400 text-[11px] mb-1.5 font-medium">
             <span>Margine Netto</span>
-            <TrendingUp className="w-4 h-4 text-indigo-400" />
+            <div className="w-6 h-6 rounded-lg bg-indigo-500/10 text-indigo-400 flex items-center justify-center">
+              <TrendingUp className="w-3.5 h-3.5" />
+            </div>
           </div>
-          <div className={`text-2xl font-black font-mono ${stats.totalProfit >= 0 ? 'text-indigo-400' : 'text-rose-400'}`}>
-            {stats.totalProfit >= 0 ? '+' : ''}{stats.totalProfit.toFixed(2)} €
+          <div className={`text-2xl font-bold font-mono tracking-tight ${stats.totalProfit >= 0 ? 'text-indigo-300' : 'text-rose-400'}`}>
+            {stats.totalProfit >= 0 ? '+' : ''}{stats.totalProfit.toFixed(2)} <span className="text-sm font-sans font-normal text-slate-400">€</span>
           </div>
-          <div className="text-[11px] text-slate-500 mt-1">
-            Su {stats.itemsWithPurchasePrice} fumetti con prezzo d'acquisto
+          <div className="text-[11px] text-slate-400 mt-1">
+            Calcolato su {stats.itemsWithPurchasePrice} volumi
           </div>
         </div>
 
-        <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 shadow-sm">
-          <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
-            <span>Canale Più Usato</span>
-            <Tag className="w-4 h-4 text-amber-400" />
+        <div className="glass-surface p-4.5 rounded-2xl shadow-xs">
+          <div className="flex items-center justify-between text-slate-400 text-[11px] mb-1.5 font-medium">
+            <span>Canale Principale</span>
+            <div className="w-6 h-6 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center">
+              <Tag className="w-3.5 h-3.5" />
+            </div>
           </div>
-          <div className="text-xl font-bold text-white truncate">
+          <div className="text-xl font-bold text-white tracking-tight truncate">
             {stats.topChannel}
           </div>
-          <div className="text-[11px] text-slate-500 mt-1">
-            Piattaforma preferita
+          <div className="text-[11px] text-slate-400 mt-1">
+            Canale con più vendite
           </div>
         </div>
       </div>
 
       {/* 3. Filters Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/50 p-3 rounded-xl border border-slate-800">
+      <div className="flex flex-wrap items-center justify-between gap-3 glass-surface p-3 sm:p-3.5 rounded-2xl shadow-xs">
         <div className="flex flex-wrap items-center gap-2">
           {/* Year Filter */}
           <select
             value={selectedYear}
             onChange={(e) => setSelectedYear(e.target.value)}
-            className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs font-bold text-white focus:outline-none focus:border-indigo-500"
+            className="px-3 py-1.5 rounded-xl bg-[#07080b] border border-white/10 text-xs font-semibold text-white focus:outline-none focus:border-indigo-500/80 cursor-pointer"
           >
             <option value="Tutti gli anni">Tutti gli anni</option>
             <option value="2026">2026</option>
@@ -405,7 +413,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
           <select
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value)}
-            className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs font-semibold text-slate-200 focus:outline-none focus:border-indigo-500"
+            className="px-3 py-1.5 rounded-xl bg-[#07080b] border border-white/10 text-xs font-medium text-slate-200 focus:outline-none focus:border-indigo-500/80 cursor-pointer"
           >
             {MONTHS.map(m => (
               <option key={m} value={m}>{m}</option>
@@ -416,7 +424,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
           <select
             value={channelFilter}
             onChange={(e) => setChannelFilter(e.target.value)}
-            className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs font-semibold text-slate-200 focus:outline-none focus:border-indigo-500"
+            className="px-3 py-1.5 rounded-xl bg-[#07080b] border border-white/10 text-xs font-medium text-slate-200 focus:outline-none focus:border-indigo-500/80 cursor-pointer"
           >
             <option value="Tutti">Tutti i canali</option>
             {CHANNELS.map(ch => (
@@ -427,18 +435,18 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
 
         {/* Search Input */}
         <div className="relative w-full sm:w-64">
-          <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="Cerca per titolo, canale, note..."
             value={searchFilter}
             onChange={(e) => setSearchFilter(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+            className="w-full pl-8.5 pr-3 py-1.5 rounded-xl bg-[#07080b] border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/80 transition"
           />
           {searchFilter && (
             <button 
               onClick={() => setSearchFilter('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -452,24 +460,24 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
           Caricamento vendite in corso...
         </div>
       ) : filteredSales.length === 0 ? (
-        <div className="text-center py-16 px-4 bg-slate-900/30 rounded-2xl border border-dashed border-slate-800">
-          <div className="w-12 h-12 rounded-full bg-slate-800/80 text-slate-500 flex items-center justify-center mx-auto mb-3">
+        <div className="text-center py-16 px-4 glass-surface rounded-2xl border border-dashed border-white/10">
+          <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 text-slate-400 flex items-center justify-center mx-auto mb-3">
             <DollarSign className="w-6 h-6" />
           </div>
-          <h3 className="text-base font-bold text-white mb-1">Nessuna vendita registrata</h3>
-          <p className="text-xs text-slate-400 max-w-sm mx-auto mb-4">
+          <h3 className="text-sm font-semibold text-white mb-1">Nessuna vendita registrata</h3>
+          <p className="text-[11px] text-slate-400 max-w-sm mx-auto mb-4">
             Non ci sono vendite registrate per i filtri selezionati. Puoi aggiungere vendite di fumetti dalla tua libreria o fumetti esterni.
           </p>
           <button
             onClick={handleOpenAddModal}
-            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs inline-flex items-center gap-2 transition"
+            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs inline-flex items-center gap-2 transition active:scale-98 shadow-sm"
           >
             <Plus className="w-4 h-4" />
             Aggiungi la prima vendita
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3">
+        <div className="grid grid-cols-1 gap-2.5">
           {filteredSales.map((sale) => {
             const hasPurchase = sale.purchase_price !== undefined && sale.purchase_price !== null && sale.purchase_price > 0;
             const profit = hasPurchase ? (sale.price - (sale.purchase_price || 0)) : null;
@@ -477,11 +485,11 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
             return (
               <div
                 key={sale.id}
-                className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-slate-700/80 transition flex flex-col sm:flex-row sm:items-center justify-between gap-4 group"
+                className="p-3.5 sm:p-4 rounded-2xl glass-surface hover:glass-surface-elevated border border-white/6 hover:border-white/12 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 group"
               >
                 <div className="flex items-center gap-3.5 min-w-0">
                   {/* Cover or Icon */}
-                  <div className="w-12 h-16 rounded-lg bg-slate-950 border border-slate-800 overflow-hidden shrink-0 flex items-center justify-center relative">
+                  <div className="w-12 h-16 rounded-xl bg-[#07080b] border border-white/8 overflow-hidden shrink-0 flex items-center justify-center relative">
                     {sale.comic_id && (sale.cover_url || sale.local_cover_path) ? (
                       <img
                         src={getComicCoverUrl({ cover_url: sale.cover_url || undefined, local_cover_path: sale.local_cover_path || undefined }) || undefined}

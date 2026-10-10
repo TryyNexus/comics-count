@@ -41,39 +41,39 @@ export const KPIBanner: React.FC<KPIBannerProps> = ({ summary, onRefresh }) => {
   const isOverBudget = summary.budget > 0 && summary.monthlySpent > summary.budget;
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 mb-6">
       {/* Spesa Mese */}
-      <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-lg backdrop-blur-sm relative overflow-hidden group hover:border-slate-700 transition">
-        <div className="flex items-center justify-between text-slate-400 mb-1">
-          <span className="text-xs font-semibold uppercase tracking-wider">Spesa Mese ({summary.month})</span>
-          <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-400">
-            <Euro className="w-4 h-4" />
+      <div className="glass-surface rounded-2xl p-4.5 relative overflow-hidden group hover:border-white/15 transition-all shadow-xs">
+        <div className="flex items-center justify-between text-slate-400 mb-2">
+          <span className="text-[11px] font-medium tracking-wide text-slate-400">Spesa {summary.month}</span>
+          <div className="w-7 h-7 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center">
+            <Euro className="w-3.5 h-3.5" />
           </div>
         </div>
-        <div className="text-2xl font-bold text-white tracking-tight">
-          {summary.monthlySpent.toFixed(2)} €
+        <div className="text-2xl font-bold text-white tracking-tight font-mono">
+          {summary.monthlySpent.toFixed(2)} <span className="text-sm font-sans font-normal text-slate-400">€</span>
         </div>
         {summary.budget > 0 ? (
-          <div className="mt-2 text-xs">
-            <div className="flex justify-between text-slate-400 mb-1">
+          <div className="mt-3">
+            <div className="flex justify-between items-center text-[11px] text-slate-400 mb-1.5 font-mono">
               <span>Budget: {summary.budget.toFixed(2)} €</span>
-              <span className={isOverBudget ? 'text-rose-400 font-semibold' : 'text-emerald-400'}>
+              <span className={isOverBudget ? 'text-rose-400 font-semibold' : 'text-emerald-400 font-medium'}>
                 {budgetProgress}%
               </span>
             </div>
-            <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+            <div className="w-full bg-white/5 rounded-full h-1 overflow-hidden">
               <div 
-                className={`h-full rounded-full transition-all duration-500 ${isOverBudget ? 'bg-rose-500' : 'bg-indigo-500'}`}
+                className={`h-full rounded-full transition-all duration-700 ease-out ${isOverBudget ? 'bg-rose-500' : 'bg-indigo-500'}`}
                 style={{ width: `${budgetProgress}%` }}
               />
             </div>
           </div>
         ) : (
-          <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
-            <span>Nessun budget impostato</span>
+          <div className="mt-3 flex items-center justify-between text-[11px] text-slate-500">
+            <span>Nessun budget</span>
             <button 
               onClick={() => { setBudgetValue(''); setIsEditingBudget(true); }}
-              className="text-indigo-400 hover:text-indigo-300 flex items-center gap-1 cursor-pointer"
+              className="text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-1 cursor-pointer transition"
             >
               <Edit2 className="w-3 h-3" /> Imposta
             </button>
@@ -82,18 +82,18 @@ export const KPIBanner: React.FC<KPIBannerProps> = ({ summary, onRefresh }) => {
       </div>
 
       {/* Spesa Netta Annuale */}
-      <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-lg backdrop-blur-sm relative overflow-hidden group hover:border-slate-700 transition">
-        <div className="flex items-center justify-between text-slate-400 mb-1">
-          <span className="text-xs font-semibold uppercase tracking-wider">Spesa Netta {summary.year}</span>
-          <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
-            <TrendingUp className="w-4 h-4" />
+      <div className="glass-surface rounded-2xl p-4.5 relative overflow-hidden group hover:border-white/15 transition-all shadow-xs">
+        <div className="flex items-center justify-between text-slate-400 mb-2">
+          <span className="text-[11px] font-medium tracking-wide text-slate-400">Spesa Netta {summary.year}</span>
+          <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
+            <TrendingUp className="w-3.5 h-3.5" />
           </div>
         </div>
-        <div className="text-2xl font-bold text-white tracking-tight">
-          {summary.annualNet.toFixed(2)} €
+        <div className="text-2xl font-bold text-white tracking-tight font-mono">
+          {summary.annualNet.toFixed(2)} <span className="text-sm font-sans font-normal text-slate-400">€</span>
         </div>
-        <div className="mt-1 text-xs text-slate-400 flex items-center gap-1">
-          <span className="text-slate-300 font-medium">Lordo: {summary.annualSpent.toFixed(2)} €</span>
+        <div className="mt-2 text-[11px] text-slate-400 flex items-center gap-1.5 flex-wrap">
+          <span>Lordo: <strong className="text-slate-300 font-mono font-medium">{summary.annualSpent.toFixed(2)} €</strong></span>
           {summary.annualSales > 0 && (
             <span className="text-emerald-400 font-medium">
               (-{summary.annualSales.toFixed(2)} € vendite)
@@ -102,34 +102,34 @@ export const KPIBanner: React.FC<KPIBannerProps> = ({ summary, onRefresh }) => {
         </div>
       </div>
 
-      {/* Fumetti Mese */}
-      <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-lg backdrop-blur-sm relative overflow-hidden group hover:border-slate-700 transition">
-        <div className="flex items-center justify-between text-slate-400 mb-1">
-          <span className="text-xs font-semibold uppercase tracking-wider">Acquisti nel Mese</span>
-          <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400">
-            <BookOpen className="w-4 h-4" />
+      {/* Acquisti Mese */}
+      <div className="glass-surface rounded-2xl p-4.5 relative overflow-hidden group hover:border-white/15 transition-all shadow-xs">
+        <div className="flex items-center justify-between text-slate-400 mb-2">
+          <span className="text-[11px] font-medium tracking-wide text-slate-400">Acquisti nel Mese</span>
+          <div className="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center">
+            <BookOpen className="w-3.5 h-3.5" />
           </div>
         </div>
         <div className="text-2xl font-bold text-white tracking-tight">
           {summary.monthlyCount} <span className="text-sm font-normal text-slate-400">volumi</span>
         </div>
-        <div className="mt-1 text-xs text-slate-400">
+        <div className="mt-2 text-[11px] text-slate-400">
           Totale anno {summary.year}: <span className="text-slate-200 font-medium">{summary.annualCount} volumi</span>
         </div>
       </div>
 
       {/* Stato Lettura */}
-      <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-lg backdrop-blur-sm relative overflow-hidden group hover:border-slate-700 transition">
-        <div className="flex items-center justify-between text-slate-400 mb-1">
-          <span className="text-xs font-semibold uppercase tracking-wider">Progresso Lettura</span>
-          <div className="p-2 rounded-lg bg-purple-500/10 text-purple-400">
-            <CheckCircle2 className="w-4 h-4" />
+      <div className="glass-surface rounded-2xl p-4.5 relative overflow-hidden group hover:border-white/15 transition-all shadow-xs">
+        <div className="flex items-center justify-between text-slate-400 mb-2">
+          <span className="text-[11px] font-medium tracking-wide text-slate-400">Progresso Lettura</span>
+          <div className="w-7 h-7 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center">
+            <CheckCircle2 className="w-3.5 h-3.5" />
           </div>
         </div>
         <div className="text-2xl font-bold text-white tracking-tight">
           {summary.monthlyReadCount} <span className="text-sm font-normal text-slate-400">/ {summary.monthlyCount} letti</span>
         </div>
-        <div className="mt-1 text-xs text-slate-400">
+        <div className="mt-2 text-[11px] text-slate-400">
           {summary.monthlyCount > 0 
             ? `${Math.round((summary.monthlyReadCount / summary.monthlyCount) * 100)}% letti di questo mese`
             : 'Nessun fumetto nel mese'}

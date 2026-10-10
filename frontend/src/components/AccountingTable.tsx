@@ -277,18 +277,18 @@ export const AccountingTable: React.FC<AccountingTableProps> = ({
   return (
     <div className="space-y-4 pb-12">
       {/* Table Toolbar Header */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 sm:p-4 shadow-xl flex flex-wrap items-center justify-between gap-3">
+      <div className="glass-surface rounded-2xl p-4 sm:p-4.5 shadow-xs flex flex-wrap items-center justify-between gap-3.5">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-base font-extrabold text-white tracking-tight flex items-center gap-2">
-              <span>📊 Registro Contabile Uscite</span>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 font-semibold font-mono">
+            <h2 className="text-sm sm:text-base font-bold text-white tracking-tight flex items-center gap-2">
+              <span>Registro Contabile Uscite</span>
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/8 text-indigo-300 border border-white/10 font-medium font-mono">
                 {month} {year}
               </span>
             </h2>
           </div>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Prospetto mensile a 6 colonne: DC, Marvel, Manga, Altro/Indie, Ordini (HVC Totale) ed Eventi.
+          <p className="text-[11px] text-slate-400 mt-0.5">
+            Prospetto mensile a 6 colonne: DC, Marvel, Manga, Altro/Indie, Ordini ed Eventi.
           </p>
         </div>
 
@@ -300,15 +300,15 @@ export const AccountingTable: React.FC<AccountingTableProps> = ({
               placeholder="Filtra in tabella..."
               value={tableSearch}
               onChange={e => setTableSearch(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white focus:outline-hidden focus:border-indigo-500"
+              className="w-full bg-[#07080b] border border-white/10 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-indigo-500/80 transition"
             />
-            <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2" />
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
           </div>
 
           {/* Monthly Grand Total Pill */}
-          <div className="bg-indigo-950/60 border border-indigo-500/40 px-3 py-1.5 rounded-lg flex items-center gap-2">
-            <span className="text-xs text-indigo-300 font-semibold">Totale:</span>
-            <span className="text-base font-bold text-white font-mono">{monthlySpent.toFixed(2)} €</span>
+          <div className="glass-surface-elevated px-3 py-1.5 rounded-xl flex items-center gap-2 border border-white/10">
+            <span className="text-xs text-slate-400 font-medium">Totale:</span>
+            <span className="text-sm sm:text-base font-bold text-white font-mono">{monthlySpent.toFixed(2)} €</span>
           </div>
         </div>
       </div>
@@ -529,14 +529,14 @@ export const AccountingTable: React.FC<AccountingTableProps> = ({
       </div>
 
       {/* FULL 6-COLUMN SPREADSHEET (Visible on desktop, or on mobile when Table mode is selected) */}
-      <div className={`bg-slate-900/95 border border-slate-800 rounded-xl overflow-hidden shadow-2xl ${mobileViewMode === 'table' ? 'block' : 'hidden md:block'}`}>
+      <div className={`glass-surface rounded-2xl overflow-hidden shadow-xl border border-white/8 ${mobileViewMode === 'table' ? 'block' : 'hidden md:block'}`}>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse min-w-[1200px]">
             <thead>
               {/* Top Category Headers */}
-              <tr className="border-b border-slate-800 text-white font-bold text-xs uppercase tracking-wider">
+              <tr className="border-b border-white/8 text-white font-semibold text-xs tracking-wider">
                 {/* 1. DC */}
-                <th className="p-3 border-r border-slate-800 bg-sky-950/30 text-sky-400" style={{ width: '16.6%' }}>
+                <th className="p-3 border-r border-white/6 bg-sky-500/10 text-sky-400" style={{ width: '16.6%' }}>
                   <div className="flex items-center justify-between">
                     <span>DC Comics ({dcList.length})</span>
                     <button 

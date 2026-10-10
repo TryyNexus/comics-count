@@ -46,15 +46,15 @@ export const ComicCard: React.FC<ComicCardProps> = ({
     : 'Letto';
 
   return (
-    <div className="bg-slate-900/90 border border-slate-800 hover:border-slate-700 rounded-xl overflow-hidden shadow-lg hover:shadow-indigo-500/5 transition flex flex-col group">
+    <div className="glass-surface hover:glass-surface-elevated rounded-2xl overflow-hidden transition-all duration-300 flex flex-col group hover:shadow-xl hover:shadow-indigo-500/5 hover:-translate-y-0.5">
       {/* Cover / Image Header */}
-      <div className="relative aspect-3/4 w-full bg-slate-950 flex items-center justify-center overflow-hidden border-b border-slate-800/80">
+      <div className="relative aspect-3/4 w-full bg-[#07080b] flex items-center justify-center overflow-hidden border-b border-white/5">
         {coverSrc && !imgError ? (
           <img 
             src={coverSrc} 
             alt={comic.title}
             referrerPolicy="no-referrer"
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            className="w-full h-full object-cover group-hover:scale-103 transition-transform duration-500 ease-out"
             loading="lazy"
             onError={(e) => {
               handleCoverError(e, comic, () => setImgError(true));
@@ -164,12 +164,12 @@ export const ComicCard: React.FC<ComicCardProps> = ({
         </div>
 
         {/* Footer: Status + Prices */}
-        <div className="pt-3 mt-3 border-t border-slate-800/80 flex items-center justify-between">
+        <div className="pt-2.5 mt-2.5 border-t border-white/5 flex items-center justify-between">
           {/* Status selector */}
           <select 
             value={comic.status}
             onChange={(e) => onStatusChange(comic.id, e.target.value as ComicStatus)}
-            className={`text-[11px] font-medium px-2 py-1 rounded-md border ${statusInfo.bg} ${statusInfo.color} focus:outline-hidden cursor-pointer`}
+            className={`text-[10px] font-medium px-2 py-1 rounded-lg border ${statusInfo.bg} ${statusInfo.color} focus:outline-hidden cursor-pointer transition`}
           >
             <option value="In uscita">In uscita</option>
             <option value="Preordinato">Preordinato</option>
