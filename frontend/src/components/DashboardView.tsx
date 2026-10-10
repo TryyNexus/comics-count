@@ -108,24 +108,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   return (
     <div className="space-y-8 pb-12">
       {/* 1. Bar Chart: Andamento Mensile Spese e Budget */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow-xl">
+      <div className="glass-surface rounded-2xl p-5 shadow-xs">
         <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
           <div>
-            <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-indigo-400" />
+            <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-indigo-400" />
               Andamento Spese Mese su Mese ({year})
             </h3>
             <p className="text-xs text-slate-400">
-              Confronto della spesa lorda mensile, vendite registrate e budget
+              Confronto della spesa lorda mensile, vendite registrate e spesa netta
             </p>
           </div>
           <div className="flex items-center gap-4 text-xs font-semibold">
             <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-xs bg-indigo-500 inline-block" />
+              <span className="w-2.5 h-2.5 rounded-xs bg-indigo-500 inline-block" />
               <span className="text-slate-300">Spesa Lorda (€)</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-xs bg-emerald-500 inline-block" />
+              <span className="w-2.5 h-2.5 rounded-xs bg-emerald-500 inline-block" />
               <span className="text-slate-300">Spesa Netta (€)</span>
             </div>
           </div>
@@ -137,7 +137,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <XAxis dataKey="month" stroke="#64748b" fontSize={11} tickLine={false} />
               <YAxis stroke="#64748b" fontSize={11} tickLine={false} unit="€" />
               <Tooltip 
-                contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', fontSize: '12px' }}
+                contentStyle={{ backgroundColor: '#0f1118', borderColor: 'rgba(255,255,255,0.08)', borderRadius: '12px', fontSize: '12px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}
                 formatter={(val: any) => [`${Number(val).toFixed(2)} €`]}
               />
               <Bar dataKey="spent" name="Spesa Lorda" fill="#6366f1" radius={[4, 4, 0, 0]} />
@@ -150,10 +150,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       {/* 2. Grid with Publisher Breakdown Donut & Breakdown Table */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Donut Chart */}
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow-xl flex flex-col justify-between">
+        <div className="glass-surface rounded-2xl p-5 shadow-xs flex flex-col justify-between">
           <div>
-            <h3 className="text-base font-bold text-white flex items-center gap-2 mb-1">
-              <PieIcon className="w-5 h-5 text-purple-400" />
+            <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2 mb-1">
+              <PieIcon className="w-4 h-4 text-purple-400" />
               Ripartizione per Casa Editrice ({year})
             </h3>
             <p className="text-xs text-slate-400 mb-4">
@@ -182,7 +182,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   ))}
                 </Pie>
                 <Tooltip 
-                  contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', fontSize: '12px' }}
+                  contentStyle={{ backgroundColor: '#0f1118', borderColor: 'rgba(255,255,255,0.08)', borderRadius: '12px', fontSize: '12px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}
                   formatter={(val: any, name: any, item: any) => [
                     `${Number(val).toFixed(2)} € (${item.payload.percentage}%)`, 
                     name
@@ -192,12 +192,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </ResponsiveContainer>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-slate-800/80">
+          <div className="grid grid-cols-2 gap-2 text-xs pt-3 border-t border-white/6">
             {publisherBreakdown.slice(0, 6).map((item, i) => (
-              <div key={i} className="flex items-center justify-between p-1.5 rounded-lg bg-slate-950/40">
+              <div key={i} className="flex items-center justify-between p-2 rounded-xl glass-surface-elevated">
                 <div className="flex items-center gap-2 truncate">
                   <span 
-                    className="w-2.5 h-2.5 rounded-full shrink-0" 
+                    className="w-2.5 h-2.5 rounded-full shrink-0 shadow-xs" 
                     style={{ backgroundColor: item.color || CHART_COLORS[i % CHART_COLORS.length] }} 
                   />
                   <span className="text-slate-300 truncate font-medium">{item.name}</span>
@@ -209,10 +209,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         {/* Breakdown Table */}
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow-xl flex flex-col justify-between">
+        <div className="glass-surface rounded-2xl p-5 shadow-xs flex flex-col justify-between">
           <div>
-            <h3 className="text-base font-bold text-white flex items-center gap-2 mb-1">
-              <Euro className="w-5 h-5 text-emerald-400" />
+            <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2 mb-1">
+              <Euro className="w-4 h-4 text-emerald-400" />
               Dettaglio Spesa per Editore
             </h3>
             <p className="text-xs text-slate-400 mb-4">
@@ -223,19 +223,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="overflow-x-auto grow">
             <table className="w-full text-left text-xs">
               <thead>
-                <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider text-[11px]">
-                  <th className="pb-2">Editore</th>
-                  <th className="pb-2 text-center">Volumi</th>
-                  <th className="pb-2 text-right">Spesa (€)</th>
-                  <th className="pb-2 text-right">% su Totale</th>
+                <tr className="border-b border-white/6 text-slate-400 uppercase tracking-wider text-[11px]">
+                  <th className="pb-2.5">Editore</th>
+                  <th className="pb-2.5 text-center">Volumi</th>
+                  <th className="pb-2.5 text-right">Spesa (€)</th>
+                  <th className="pb-2.5 text-right">% su Totale</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/50">
+              <tbody className="divide-y divide-white/4">
                 {publisherBreakdown.map((item, i) => (
-                  <tr key={i} className="hover:bg-slate-800/20 transition">
+                  <tr key={i} className="hover:bg-white/2 transition">
                     <td className="py-2.5 font-medium text-slate-200 flex items-center gap-2">
                       <span 
-                        className="w-2.5 h-2.5 rounded-full" 
+                        className="w-2.5 h-2.5 rounded-full shadow-xs" 
                         style={{ backgroundColor: item.color || CHART_COLORS[i % CHART_COLORS.length] }} 
                       />
                       {item.name}

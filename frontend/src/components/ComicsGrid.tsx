@@ -49,7 +49,7 @@ export const ComicsGrid: React.FC<ComicsGridProps> = ({
   return (
     <div className="space-y-5 pb-12">
       {/* Filter and Search Bar */}
-      <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-lg flex flex-wrap items-center justify-between gap-4">
+      <div className="glass-surface rounded-2xl p-4 sm:p-4.5 shadow-xs flex flex-wrap items-center justify-between gap-3.5">
         {/* Search Input */}
         <div className="relative flex-1 min-w-[240px]">
           <input
@@ -57,34 +57,34 @@ export const ComicsGrid: React.FC<ComicsGridProps> = ({
             placeholder="Cerca per titolo, variante, codice ISBN o note..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-700/80 rounded-lg pl-9 pr-4 py-2 text-white text-xs placeholder:text-slate-500 focus:outline-hidden focus:border-indigo-500"
+            className="w-full bg-black/40 border border-white/8 rounded-xl pl-9 pr-4 py-2 text-white text-xs placeholder:text-slate-500 focus:outline-hidden focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/20 transition-all"
           />
           <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
         </div>
 
         {/* Publisher Filter */}
-        <div className="flex items-center gap-2 overflow-x-auto py-1 max-w-full">
+        <div className="flex items-center gap-1.5 overflow-x-auto py-1 max-w-full">
           <button
             onClick={() => setSelectedPublisher('all')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold shrink-0 transition cursor-pointer ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition-all cursor-pointer active:scale-95 ${
               selectedPublisher === 'all'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                ? 'bg-indigo-600/90 text-white shadow-xs border border-indigo-400/30'
+                : 'bg-white/3 text-slate-400 hover:text-white border border-white/6 hover:bg-white/6'
             }`}
           >
-            Tutti gli Editori
+            Tutti
           </button>
           {publishers.slice(0, 7).map(p => (
             <button
               key={p.id}
               onClick={() => setSelectedPublisher(p.name)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold shrink-0 transition cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${
                 selectedPublisher === p.name
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                  : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                  ? 'bg-indigo-600/90 text-white shadow-xs border border-indigo-400/30'
+                  : 'bg-white/3 text-slate-400 hover:text-white border border-white/6 hover:bg-white/6'
               }`}
             >
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }} />
+              <span className="w-2 h-2 rounded-full shadow-xs" style={{ backgroundColor: p.color }} />
               {p.name}
             </button>
           ))}
@@ -95,7 +95,7 @@ export const ComicsGrid: React.FC<ComicsGridProps> = ({
           <select
             value={selectedStatus}
             onChange={e => setSelectedStatus(e.target.value)}
-            className="bg-slate-950 border border-slate-700/80 rounded-lg px-3 py-2 text-white text-xs focus:outline-hidden cursor-pointer"
+            className="bg-black/40 border border-white/8 rounded-xl px-3 py-2 text-white text-xs focus:outline-hidden cursor-pointer"
           >
             <option value="all">Tutti gli stati</option>
             <option value="In uscita">In uscita</option>
@@ -109,7 +109,7 @@ export const ComicsGrid: React.FC<ComicsGridProps> = ({
 
           <button
             onClick={onAddNew}
-            className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center gap-1.5 transition cursor-pointer shadow-lg shadow-indigo-600/30 shrink-0"
+            className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-95 border border-indigo-400/30 shrink-0"
           >
             <Plus className="w-4 h-4" /> Nuovo Fumetto
           </button>
@@ -118,15 +118,15 @@ export const ComicsGrid: React.FC<ComicsGridProps> = ({
 
       {/* Comics Grid */}
       {filteredComics.length === 0 ? (
-        <div className="bg-slate-900/40 border border-dashed border-slate-800 rounded-2xl p-12 text-center">
-          <BookOpen className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-          <h3 className="text-base font-bold text-white mb-1">Nessun fumetto trovato</h3>
+        <div className="glass-surface border border-dashed border-white/10 rounded-2xl p-12 text-center">
+          <BookOpen className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+          <h3 className="text-sm font-bold text-white mb-1">Nessun fumetto trovato</h3>
           <p className="text-xs text-slate-400 mb-4 max-w-sm mx-auto">
             Nessun fumetto corrisponde ai filtri selezionati per questo mese o ricerca.
           </p>
           <button
             onClick={onAddNew}
-            className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs inline-flex items-center gap-1.5 shadow-lg shadow-indigo-600/20"
+            className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs inline-flex items-center gap-1.5 shadow-xs active:scale-95"
           >
             <Plus className="w-4 h-4" /> Aggiungi Fumetto
           </button>

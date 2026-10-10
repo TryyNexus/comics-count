@@ -201,11 +201,11 @@ export const ReadingsView: React.FC<ReadingsViewProps> = ({ currentYear, current
   return (
     <div className="space-y-6 pb-12">
       {/* Top Header Card */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow-xl">
+      <div className="glass-surface rounded-2xl p-5 shadow-xs">
         <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
           <div>
-            <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <BookOpen className="w-5 h-5 text-purple-400" />
+            <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+              <BookOpen className="w-4 h-4 text-purple-400" />
               Diario delle Letture ({selectedMonth} {currentYear})
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">
@@ -217,47 +217,47 @@ export const ReadingsView: React.FC<ReadingsViewProps> = ({ currentYear, current
             <select
               value={selectedMonth}
               onChange={e => setSelectedMonth(e.target.value)}
-              className="bg-slate-950 border border-slate-700 text-white text-xs px-3 py-1.5 rounded-lg focus:outline-hidden cursor-pointer"
+              className="bg-black/40 border border-white/8 text-white text-xs px-3 py-1.5 rounded-xl focus:outline-hidden cursor-pointer"
             >
               {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
             <button
               onClick={() => setIsAdding(!isAdding)}
-              className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs flex items-center gap-1.5 transition shadow-md shadow-purple-600/25 cursor-pointer"
+              className="px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs flex items-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95 border border-purple-400/30"
             >
-              {isAdding ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+              {isAdding ? <X className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
               {isAdding ? 'Chiudi' : 'Nuova Lettura'}
             </button>
           </div>
         </div>
 
         {/* Monthly Summary Statistics Banner */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5 mb-5 p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 text-xs">
-          <div className="p-2 rounded-lg bg-slate-900/80 border border-slate-800 flex flex-col justify-between">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5 mb-5 p-3 rounded-2xl bg-white/2 border border-white/6 text-xs">
+          <div className="p-2.5 rounded-xl glass-surface-elevated flex flex-col justify-between">
             <span className="text-[11px] text-slate-400">Totale Letti</span>
-            <span className="text-base font-extrabold text-white font-mono">{totalRead}</span>
+            <span className="text-sm sm:text-base font-bold text-white font-mono mt-1">{totalRead}</span>
           </div>
-          <div className="p-2 rounded-lg bg-sky-950/30 border border-sky-800/40 flex flex-col justify-between">
+          <div className="p-2.5 rounded-xl bg-sky-950/20 border border-sky-500/20 flex flex-col justify-between">
             <span className="text-[11px] text-sky-400">DC Comics</span>
-            <span className="text-base font-extrabold text-sky-300 font-mono">{countDC}</span>
+            <span className="text-sm sm:text-base font-bold text-sky-300 font-mono mt-1">{countDC}</span>
           </div>
-          <div className="p-2 rounded-lg bg-rose-950/30 border border-rose-800/40 flex flex-col justify-between">
+          <div className="p-2.5 rounded-xl bg-rose-950/20 border border-rose-500/20 flex flex-col justify-between">
             <span className="text-[11px] text-rose-400">Marvel</span>
-            <span className="text-base font-extrabold text-rose-300 font-mono">{countMarvel}</span>
+            <span className="text-sm sm:text-base font-bold text-rose-300 font-mono mt-1">{countMarvel}</span>
           </div>
-          <div className="p-2 rounded-lg bg-purple-950/30 border border-purple-800/40 flex flex-col justify-between">
+          <div className="p-2.5 rounded-xl bg-purple-950/20 border border-purple-500/20 flex flex-col justify-between">
             <span className="text-[11px] text-purple-400">Manga</span>
-            <span className="text-base font-extrabold text-purple-300 font-mono">{countManga}</span>
+            <span className="text-sm sm:text-base font-bold text-purple-300 font-mono mt-1">{countManga}</span>
           </div>
-          <div className="p-2 rounded-lg bg-emerald-950/30 border border-emerald-800/40 flex flex-col justify-between">
+          <div className="p-2.5 rounded-xl bg-emerald-950/20 border border-emerald-500/20 flex flex-col justify-between">
             <span className="text-[11px] text-emerald-400">Altro</span>
-            <span className="text-base font-extrabold text-emerald-300 font-mono">{countAltro}</span>
+            <span className="text-sm sm:text-base font-bold text-emerald-300 font-mono mt-1">{countAltro}</span>
           </div>
-          <div className="p-2 rounded-lg bg-amber-950/30 border border-amber-800/40 flex flex-col justify-between">
+          <div className="p-2.5 rounded-xl bg-amber-950/20 border border-amber-500/20 flex flex-col justify-between">
             <span className="text-[11px] text-amber-400">Voto Medio</span>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 mt-1">
               <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-              <span className="text-base font-extrabold text-amber-300 font-mono">{avgRating}</span>
+              <span className="text-sm sm:text-base font-bold text-amber-300 font-mono">{avgRating}</span>
             </div>
           </div>
         </div>
@@ -576,7 +576,7 @@ export const ReadingsView: React.FC<ReadingsViewProps> = ({ currentYear, current
               return (
                 <div 
                   key={r.id}
-                  className="bg-slate-950/90 border border-slate-800/80 hover:border-purple-500/40 p-3.5 rounded-xl transition flex flex-col justify-between shadow-md hover:shadow-purple-950/20 group"
+                  className="glass-surface-elevated p-3.5 rounded-xl transition-all flex flex-col justify-between hover:-translate-y-0.5 hover:shadow-md group"
                 >
                   <div>
                     {/* Header: Category Badge & Delete Button */}
@@ -594,7 +594,7 @@ export const ReadingsView: React.FC<ReadingsViewProps> = ({ currentYear, current
 
                       <button 
                         onClick={() => handleDelete(r.id)}
-                        className="text-slate-500 hover:text-rose-400 p-1 rounded hover:bg-rose-500/10 transition cursor-pointer"
+                        className="text-slate-500 hover:text-rose-400 p-1 rounded-md hover:bg-rose-500/10 transition-all cursor-pointer active:scale-90"
                         title="Elimina lettura"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -605,7 +605,7 @@ export const ReadingsView: React.FC<ReadingsViewProps> = ({ currentYear, current
                     <div className="flex gap-3 mb-3">
                       {/* Clickable thumbnail to enlarge */}
                       <div 
-                        className="w-10 h-14 shrink-0 bg-slate-900 rounded-md border border-slate-800 overflow-hidden relative cursor-pointer group/thumb shadow"
+                        className="w-10 h-14 shrink-0 bg-slate-900 rounded-md border border-white/10 overflow-hidden relative cursor-pointer group/thumb shadow-xs"
                         onClick={() => {
                           if (coverSrc) setPreviewCover({ title: r.title, src: coverSrc });
                         }}

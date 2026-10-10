@@ -148,11 +148,11 @@ export const AccountingTable: React.FC<AccountingTableProps> = ({
     const isRead = comic.status === 'Letto';
 
     return (
-      <td key={comic.id} className={`p-2.5 align-top ${isLast ? '' : 'border-r border-slate-800/80'} hover:bg-slate-800/20 transition group`}>
-        <div className="flex gap-2">
+      <td key={comic.id} className={`p-2 sm:p-2.5 align-top ${isLast ? '' : 'border-r border-white/6'} hover:bg-white/[0.025] transition-colors group`}>
+        <div className="flex gap-2.5">
           {/* Miniature Cover Thumbnail */}
           <div 
-            className="w-8 h-11 shrink-0 bg-slate-950 rounded border border-slate-800 overflow-hidden relative cursor-pointer group/thumb shadow-xs"
+            className="w-8.5 h-12 shrink-0 bg-[#07080b] rounded-lg border border-white/10 overflow-hidden relative cursor-pointer group/thumb shadow-xs"
             onClick={() => {
               if (coverSrc) setPreviewCover({ title: comic.title, src: coverSrc });
               else onOpenCoverSearch(comic);
@@ -165,7 +165,7 @@ export const AccountingTable: React.FC<AccountingTableProps> = ({
                   src={coverSrc} 
                   alt={comic.title} 
                   referrerPolicy="no-referrer"
-                  className="w-full h-full object-cover group-hover/thumb:scale-110 transition duration-200" 
+                  className="w-full h-full object-cover group-hover/thumb:scale-108 transition-transform duration-300 ease-out" 
                   onError={(e) => {
                     handleCoverError(e, comic, () => {
                       const img = e.currentTarget;
@@ -175,13 +175,13 @@ export const AccountingTable: React.FC<AccountingTableProps> = ({
                     });
                   }}
                 />
-                <div className="w-full h-full hidden flex-col items-center justify-center text-slate-600 bg-slate-950 text-[8px]">
+                <div className="w-full h-full hidden flex-col items-center justify-center text-slate-500 bg-[#07080b] text-[8px]">
                   <BookOpen className="w-3 h-3 stroke-1" />
                 </div>
               </>
             ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center text-slate-600 bg-slate-950 text-[8px]">
-                <BookOpen className="w-3 h-3 stroke-1" />
+              <div className="w-full h-full flex flex-col items-center justify-center text-slate-600 bg-[#07080b] text-[8px]">
+                <BookOpen className="w-3.5 h-3.5 stroke-1" />
               </div>
             )}
           </div>
@@ -192,12 +192,12 @@ export const AccountingTable: React.FC<AccountingTableProps> = ({
               {/* Variant & Issue tags */}
               <div className="flex items-center gap-1 flex-wrap mb-0.5">
                 {comic.issue_number && (
-                  <span className="text-[10px] font-bold px-1 py-0.2 rounded bg-slate-800 text-slate-300 font-mono">
+                  <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-md bg-white/6 text-slate-200 font-mono border border-white/5">
                     #{comic.issue_number}
                   </span>
                 )}
                 {comic.variant_info && (
-                  <span className="text-[9px] font-semibold px-1 py-0.2 rounded bg-purple-950/60 text-purple-300 border border-purple-800/40 truncate max-w-[120px]" title={comic.variant_info}>
+                  <span className="text-[9px] font-medium px-1.5 py-0.2 rounded-md bg-purple-500/10 text-purple-300 border border-purple-500/20 truncate max-w-[120px]" title={comic.variant_info}>
                     ✨ {comic.variant_info}
                   </span>
                 )}
@@ -206,7 +206,7 @@ export const AccountingTable: React.FC<AccountingTableProps> = ({
               {/* Title */}
               <div 
                 onClick={() => onEdit(comic)}
-                className="font-semibold text-slate-100 text-xs leading-tight truncate hover:text-indigo-300 cursor-pointer transition"
+                className="font-semibold text-white text-xs leading-snug truncate hover:text-indigo-300 cursor-pointer transition-colors"
                 title={comic.title}
               >
                 {comic.title}
@@ -215,17 +215,17 @@ export const AccountingTable: React.FC<AccountingTableProps> = ({
               {/* Barcode / EAN */}
               {(comic.isbn || comic.ean) && (
                 <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1 mt-0.5">
-                  <Barcode className="w-3 h-3 text-indigo-400 shrink-0" />
+                  <Barcode className="w-3 h-3 text-indigo-400/80 shrink-0" />
                   <span className="truncate">{comic.isbn || comic.ean}</span>
                 </div>
               )}
             </div>
 
             {/* Footer inside cell: Status pill & Price */}
-            <div className="flex items-center justify-between mt-2 pt-1 border-t border-slate-800/40">
+            <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-white/5">
               <span 
                 onClick={() => onStatusChange(comic.id, isRead ? 'Da leggere' : 'Letto')}
-                className={`cursor-pointer px-1.5 py-0.5 rounded text-[10px] font-bold transition flex items-center gap-1 ${
+                className={`cursor-pointer px-1.5 py-0.5 rounded-md text-[9px] font-semibold transition-all flex items-center gap-1 active:scale-95 ${
                   isRead 
                     ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20' 
                     : comic.status === 'Preordinato'
@@ -243,24 +243,24 @@ export const AccountingTable: React.FC<AccountingTableProps> = ({
                 <span className="font-mono font-bold text-white text-xs">
                   {comic.purchase_price > 0 ? `${comic.purchase_price.toFixed(2)} €` : '0 €'}
                 </span>
-                <div className="opacity-0 group-hover:opacity-100 transition flex items-center">
+                <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
                   <button 
                     onClick={() => onOpenCoverSearch(comic)}
-                    className="text-slate-400 hover:text-indigo-300 p-0.5 transition cursor-pointer"
+                    className="text-slate-400 hover:text-indigo-300 p-0.5 transition cursor-pointer active:scale-90"
                     title="Cerca copertina e codice"
                   >
                     <ImageIcon className="w-3 h-3" />
                   </button>
                   <button 
                     onClick={() => onEdit(comic)}
-                    className="text-slate-400 hover:text-white p-0.5 transition cursor-pointer"
+                    className="text-slate-400 hover:text-white p-0.5 transition cursor-pointer active:scale-90"
                     title="Modifica"
                   >
                     <Edit2 className="w-3 h-3" />
                   </button>
                   <button 
                     onClick={() => onDelete(comic.id)}
-                    className="text-slate-400 hover:text-rose-400 p-0.5 transition cursor-pointer"
+                    className="text-slate-400 hover:text-rose-400 p-0.5 transition cursor-pointer active:scale-90"
                     title="Elimina"
                   >
                     <Trash2 className="w-3 h-3" />
