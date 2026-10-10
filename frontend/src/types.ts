@@ -113,6 +113,8 @@ export interface PurchasedComic {
   status: ComicStatus;
   channel: PurchaseChannel;
   purchase_price: number;
+  isbn?: string;
+  ean?: string;
 }
 
 export interface Reading {

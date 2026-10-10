@@ -73,8 +73,11 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
 
   useEffect(() => {
     loadSales();
-    loadComicsCollection();
   }, [selectedYear, selectedMonth]);
+
+  useEffect(() => {
+    loadComicsCollection();
+  }, []);
 
   const loadSales = async () => {
     setIsLoading(true);
@@ -92,9 +95,10 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
   const loadComicsCollection = async () => {
     setIsLoadingCollection(true);
     try {
-      // Prova prima con getPurchasedComics (filtra totali ordine e arricchisce categorie)
+      // 1. Prova getPurchasedComics (filtra totali ordine e arricchisce categorie)
       let all = await api.getPurchasedComics().catch(() => []);
-      // Se vuoto, fallback a getComics per garantire la massima compatibilità
+      
+      // 2. Se vuoto o errore, fallback a getComics completo
       if (!all || all.length === 0) {
         const fallback = await api.getComics({}).catch(() => []);
         if (fallback && fallback.length > 0) {
@@ -112,17 +116,17 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
     }
   };
 
-  // Filtered Comics for Search Dropdown (multi-token search su titolo, collana, editore, numero)
+  // Filtered Comics for Search Dropdown (multi-token search su titolo, collana, editore, variant, ISBN)
   const searchResultsComics = useMemo(() => {
     const q = comicSearchQuery.trim().toLowerCase();
     if (!q) {
-      return comicsCollection.slice(0, 15);
+      return comicsCollection.slice(0, 30);
     }
-    const tokens = q.split(/\s+/);
+    const tokens = q.split(/\s+/).filter(Boolean);
     return comicsCollection.filter(c => {
-      const fullText = `${c.title || ''} ${c.series || ''} ${c.issue_number ? '#' + c.issue_number : ''} ${c.publisher_name || ''} ${c.category || ''}`.toLowerCase();
+      const fullText = `${c.title || ''} ${c.series || ''} ${c.issue_number ? '#' + c.issue_number : ''} ${c.publisher_name || ''} ${c.variant_info || ''} ${c.isbn || ''} ${c.category || ''}`.toLowerCase();
       return tokens.every(token => fullText.includes(token));
-    }).slice(0, 25);
+    }).slice(0, 40);
   }, [comicsCollection, comicSearchQuery]);
 
   // Open Modal for New Sale
@@ -591,26 +595,26 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
 
       {/* 5. Modal: Add / Edit Sale */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in">
+          <div className="w-full max-w-lg glass-surface-elevated border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             {/* Modal Header */}
-            <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
-                  <DollarSign className="w-5 h-5" />
+            <div className="px-5 py-4 border-b border-white/8 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                  <DollarSign className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">
+                  <h3 className="text-sm sm:text-base font-bold text-white tracking-tight">
                     {editingSale ? 'Modifica Vendita' : 'Registra Nuova Vendita'}
                   </h3>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-[11px] text-slate-400">
                     Registra l'incasso e le informazioni sul fumetto venduto
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer active:scale-90"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -620,16 +624,16 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
             <form onSubmit={handleSubmit} className="p-5 space-y-4 overflow-y-auto flex-1">
               {/* Type Switcher (only for new sales) */}
               {!editingSale && (
-                <div className="grid grid-cols-2 gap-2 p-1 bg-slate-950 rounded-xl border border-slate-800 text-xs">
+                <div className="grid grid-cols-2 gap-2 p-1 bg-black/40 rounded-xl border border-white/8 text-xs">
                   <button
                     type="button"
                     onClick={() => {
                       setSaleType('registered');
                       setSelectedComic(null);
                     }}
-                    className={`py-2 px-3 rounded-lg font-bold flex items-center justify-center gap-2 transition cursor-pointer ${
+                    className={`py-2 px-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-98 ${
                       saleType === 'registered' 
-                        ? 'bg-indigo-600 text-white shadow' 
+                        ? 'bg-indigo-600/90 text-white shadow-xs border border-indigo-400/30' 
                         : 'text-slate-400 hover:text-white'
                     }`}
                   >
@@ -643,9 +647,9 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
                       setSaleType('custom');
                       setSelectedComic(null);
                     }}
-                    className={`py-2 px-3 rounded-lg font-bold flex items-center justify-center gap-2 transition cursor-pointer ${
+                    className={`py-2 px-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-98 ${
                       saleType === 'custom' 
-                        ? 'bg-indigo-600 text-white shadow' 
+                        ? 'bg-indigo-600/90 text-white shadow-xs border border-indigo-400/30' 
                         : 'text-slate-400 hover:text-white'
                     }`}
                   >
@@ -663,9 +667,9 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
                   </label>
                   
                   {selectedComic ? (
-                    <div className="p-3 rounded-xl bg-slate-950 border border-indigo-500/50 flex items-center justify-between gap-3 shadow-inner">
+                    <div className="p-3 rounded-xl bg-white/3 border border-indigo-500/40 flex items-center justify-between gap-3 shadow-inner">
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-10 h-14 rounded bg-slate-900 border border-slate-800 overflow-hidden shrink-0 flex items-center justify-center">
+                        <div className="w-10 h-14 rounded-lg bg-black/50 border border-white/10 overflow-hidden shrink-0 flex items-center justify-center">
                           {selectedComic.cover_url || selectedComic.local_cover_path ? (
                             <img
                               src={getComicCoverUrl(selectedComic) || undefined}
@@ -685,7 +689,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
                           <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wide">Fumetto selezionato</span>
                           <div className="text-xs font-bold text-white truncate">{selectedComic.title}</div>
                           <div className="text-[11px] text-slate-400 mt-0.5">
-                            {selectedComic.publisher_name} • {selectedComic.month} {selectedComic.year} • Prezzo originale: <span className="text-emerald-400 font-mono font-semibold">{selectedComic.purchase_price?.toFixed(2)} €</span>
+                            {selectedComic.publisher_name} • {selectedComic.month} {selectedComic.year} • Prezzo: <span className="text-emerald-400 font-mono font-semibold">{selectedComic.purchase_price?.toFixed(2)} €</span>
                           </div>
                         </div>
                       </div>
@@ -696,7 +700,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
                           setSelectedComic(null);
                           setComicSearchQuery('');
                         }}
-                        className="text-xs text-slate-300 hover:text-rose-400 px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800 hover:border-slate-700 shrink-0 font-medium transition cursor-pointer"
+                        className="text-xs text-slate-300 hover:text-rose-400 px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:border-white/20 shrink-0 font-medium transition-all cursor-pointer active:scale-95"
                       >
                         Cambia
                       </button>
@@ -707,17 +711,17 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
                         <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                         <input
                           type="text"
-                          placeholder="Digita per cercare tra tutti i tuoi fumetti (titolo, collana, editore)..."
+                          placeholder="Cerca per titolo, collana, editore, variante o codice..."
                           value={comicSearchQuery}
                           onChange={(e) => setComicSearchQuery(e.target.value)}
-                          className="w-full pl-9 pr-8 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
+                          className="w-full pl-9 pr-8 py-2.5 rounded-xl bg-black/40 border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/20 transition-all"
                           autoFocus
                         />
                         {comicSearchQuery && (
                           <button
                             type="button"
                             onClick={() => setComicSearchQuery('')}
-                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5 rounded"
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5 rounded cursor-pointer"
                           >
                             <X className="w-3.5 h-3.5" />
                           </button>
@@ -731,13 +735,13 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
                         </span>
                         {comicsCollection.length > 0 && (
                           <span className="text-[10px] text-slate-500 font-mono">
-                            Totale: {comicsCollection.length}
+                            Disponibili: {comicsCollection.length}
                           </span>
                         )}
                       </div>
 
                       {/* Lista integrata scrollabile (Inline Scroll Container) */}
-                      <div className="max-h-56 overflow-y-auto bg-slate-950/90 border border-slate-800 rounded-xl divide-y divide-slate-800/60 shadow-inner">
+                      <div className="max-h-56 overflow-y-auto bg-black/40 border border-white/8 rounded-xl divide-y divide-white/4 shadow-inner">
                         {searchResultsComics.length === 0 ? (
                           <div className="p-4 text-center text-xs text-slate-500">
                             Nessun fumetto corrisponde alla ricerca.
@@ -753,10 +757,10 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
                             <div
                               key={c.id}
                               onClick={() => handleSelectComic(c)}
-                              className="p-2.5 hover:bg-indigo-950/30 hover:border-indigo-500/20 cursor-pointer flex items-center justify-between gap-3 transition group"
+                              className="p-2.5 hover:bg-white/5 cursor-pointer flex items-center justify-between gap-3 transition-all group"
                             >
                               <div className="flex items-center gap-3 min-w-0">
-                                <div className="w-8 h-11 rounded bg-slate-900 border border-slate-800 overflow-hidden shrink-0 flex items-center justify-center">
+                                <div className="w-8 h-11 rounded-md bg-black/50 border border-white/8 overflow-hidden shrink-0 flex items-center justify-center">
                                   {c.cover_url || c.local_cover_path ? (
                                     <img
                                       src={getComicCoverUrl(c) || undefined}
@@ -789,7 +793,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
                                   </div>
                                 </div>
                               </div>
-                              <div className="shrink-0 opacity-0 group-hover:opacity-100 transition px-2 py-1 rounded bg-indigo-600 text-white text-[11px] font-semibold flex items-center gap-1">
+                              <div className="shrink-0 opacity-0 group-hover:opacity-100 transition px-2 py-1 rounded-md bg-indigo-600 text-white text-[11px] font-semibold flex items-center gap-1">
                                 <Check className="w-3 h-3" /> Seleziona
                               </div>
                             </div>
