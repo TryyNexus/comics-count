@@ -276,13 +276,23 @@ export const api = {
     return res.json();
   },
 
-  createSale: async (sale: Partial<SaleRefund>): Promise<SaleRefund> => {
+  createSale: async (sale: Partial<SaleRefund> & { markAsSold?: boolean }): Promise<SaleRefund> => {
     const res = await fetch(`${API_BASE}/sales`, {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify(sale)
     });
     if (!res.ok) throw new Error('Errore nella registrazione della vendita/rimborso');
+    return res.json();
+  },
+
+  updateSale: async (id: number, sale: Partial<SaleRefund> & { markAsSold?: boolean }): Promise<SaleRefund> => {
+    const res = await fetch(`${API_BASE}/sales/${id}`, {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify(sale)
+    });
+    if (!res.ok) throw new Error('Errore nell\'aggiornamento della vendita');
     return res.json();
   },
 

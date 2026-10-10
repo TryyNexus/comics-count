@@ -558,17 +558,23 @@ app.get('/api/sales', authMiddleware, (req, res) => {
   try {
     const userId = req.user.id;
     const { year, month } = req.query;
-    let query = 'SELECT * FROM sales_refunds WHERE user_id = ?';
+    let query = `
+      SELECT s.*, 
+             c.cover_url, c.local_cover_path, c.series, c.issue_number, c.purchase_price, c.status as comic_status
+      FROM sales_refunds s
+      LEFT JOIN comics c ON s.comic_id = c.id
+      WHERE s.user_id = ?
+    `;
     const params = [userId];
     if (year && year !== 'all') {
-      query += ' AND year = ?';
+      query += ' AND s.year = ?';
       params.push(year);
     }
     if (month && month !== 'all') {
-      query += ' AND month = ?';
+      query += ' AND s.month = ?';
       params.push(month);
     }
-    query += ' ORDER BY year DESC, id DESC';
+    query += ' ORDER BY s.year DESC, s.id DESC';
     const items = db.prepare(query).all(...params);
     res.json(items);
   } catch (e) {
@@ -579,10 +585,59 @@ app.get('/api/sales', authMiddleware, (req, res) => {
 app.post('/api/sales', authMiddleware, (req, res) => {
   try {
     const userId = req.user.id;
-    const { year, month, title, price, channel, notes } = req.body;
-    const stmt = db.prepare('INSERT INTO sales_refunds (user_id, year, month, title, price, channel, notes) VALUES (?, ?, ?, ?, ?, ?, ?)');
-    const result = stmt.run(userId, year, month || null, title, Number(price) || 0, channel || 'Vinted', notes || null);
-    const item = { id: result.lastInsertRowid, year, month, title, price, channel, notes };
+    const { year, month, title, price, channel, notes, date, comic_id, markAsSold } = req.body;
+    const stmt = db.prepare(`
+      INSERT INTO sales_refunds (user_id, year, month, title, price, channel, notes, date, comic_id) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const result = stmt.run(userId, year, month || null, title, Number(price) || 0, channel || 'Vinted', notes || null, date || null, comic_id ? Number(comic_id) : null);
+    
+    // Se l'utente ha scelto di segnare il fumetto come Venduto nella collezione
+    if (markAsSold && comic_id) {
+      db.prepare("UPDATE comics SET status = 'Venduto', updated_at = datetime('now') WHERE id = ? AND user_id = ?")
+        .run(comic_id, userId);
+      broadcastSyncEvent(userId, 'comic_status_changed', { id: Number(comic_id), status: 'Venduto' });
+    }
+
+    const item = db.prepare(`
+      SELECT s.*, 
+             c.cover_url, c.local_cover_path, c.series, c.issue_number, c.purchase_price, c.status as comic_status
+      FROM sales_refunds s
+      LEFT JOIN comics c ON s.comic_id = c.id
+      WHERE s.id = ? AND s.user_id = ?
+    `).get(result.lastInsertRowid, userId);
+
+    broadcastSyncEvent(userId, 'sales_updated', { item });
+    res.json(item);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.put('/api/sales/:id', authMiddleware, (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { year, month, title, price, channel, notes, date, comic_id, markAsSold } = req.body;
+    db.prepare(`
+      UPDATE sales_refunds
+      SET year = ?, month = ?, title = ?, price = ?, channel = ?, notes = ?, date = ?, comic_id = ?
+      WHERE id = ? AND user_id = ?
+    `).run(year, month || null, title, Number(price) || 0, channel || 'Vinted', notes || null, date || null, comic_id ? Number(comic_id) : null, req.params.id, userId);
+
+    if (markAsSold && comic_id) {
+      db.prepare("UPDATE comics SET status = 'Venduto', updated_at = datetime('now') WHERE id = ? AND user_id = ?")
+        .run(comic_id, userId);
+      broadcastSyncEvent(userId, 'comic_status_changed', { id: Number(comic_id), status: 'Venduto' });
+    }
+
+    const item = db.prepare(`
+      SELECT s.*, 
+             c.cover_url, c.local_cover_path, c.series, c.issue_number, c.purchase_price, c.status as comic_status
+      FROM sales_refunds s
+      LEFT JOIN comics c ON s.comic_id = c.id
+      WHERE s.id = ? AND s.user_id = ?
+    `).get(req.params.id, userId);
+
     broadcastSyncEvent(userId, 'sales_updated', { item });
     res.json(item);
   } catch (e) {

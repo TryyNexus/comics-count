@@ -215,11 +215,22 @@ function initDatabase() {
     }
   }
 
+  // Migrazione colonna comic_id per sales_refunds
+  const salesCols = db.prepare('PRAGMA table_info(sales_refunds)').all().map(c => c.name);
+  if (!salesCols.includes('comic_id')) {
+    try {
+      db.exec('ALTER TABLE sales_refunds ADD COLUMN comic_id INTEGER;');
+    } catch (err) {
+      console.log('Nota migrazione colonna comic_id su sales_refunds:', err.message);
+    }
+  }
+
   // Creazione indici multiutente
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_comics_user ON comics(user_id);
     CREATE INDEX IF NOT EXISTS idx_comics_user_year_month ON comics(user_id, year, month);
     CREATE INDEX IF NOT EXISTS idx_sales_user ON sales_refunds(user_id);
+    CREATE INDEX IF NOT EXISTS idx_sales_comic ON sales_refunds(comic_id);
     CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id);
     CREATE INDEX IF NOT EXISTS idx_readings_user ON readings(user_id);
   `);

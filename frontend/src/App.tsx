@@ -12,6 +12,7 @@ import { ImportExportModal } from './components/ImportExportModal';
 import { MobileAppModal } from './components/MobileAppModal';
 import { MonthYearPickerModal } from './components/MonthYearPickerModal';
 import { AuthModal } from './components/AuthModal';
+import { SalesView } from './components/SalesView';
 import { User } from './types';
 import { 
   BookOpen, 
@@ -22,7 +23,8 @@ import {
   BookMarked, 
   Plus, 
   RefreshCw, 
-  ChevronLeft, 
+  ChevronLeft,
+  DollarSign, 
   ChevronRight,
   ChevronDown,
   Calendar,
@@ -50,9 +52,9 @@ export function App() {
   const [currentYear, setCurrentYear] = useState<string>(() => localStorage.getItem('comics_count_year') || '2026');
   const [currentMonth, setCurrentMonth] = useState<string>(() => localStorage.getItem('comics_count_month') || 'Gennaio');
   // TABLE IS THE PRIMARY / DEFAULT VIEW AS REQUESTED
-  const [activeTab, setActiveTab] = useState<'table' | 'grid' | 'dashboard' | 'orders' | 'readings'>(() => {
+  const [activeTab, setActiveTab] = useState<'table' | 'grid' | 'dashboard' | 'sales' | 'orders' | 'readings'>(() => {
     const saved = localStorage.getItem('comics_count_tab');
-    if (saved && ['table', 'grid', 'dashboard', 'orders', 'readings'].includes(saved)) {
+    if (saved && ['table', 'grid', 'dashboard', 'sales', 'orders', 'readings'].includes(saved)) {
       return saved as any;
     }
     return 'table';
@@ -585,7 +587,19 @@ export function App() {
               }`}
             >
               <PieChart className="w-3.5 h-3.5" />
-              Statistiche & Vendite
+              Statistiche
+            </button>
+
+            <button
+              onClick={() => setActiveTab('sales')}
+              className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-2 transition cursor-pointer shrink-0 ${
+                activeTab === 'sales'
+                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20 ring-1 ring-emerald-400/40'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <DollarSign className="w-3.5 h-3.5" />
+              Vendite
             </button>
 
             {isTryyNexus && (
@@ -654,7 +668,7 @@ export function App() {
           />
         )}
 
-        {/* View: Statistiche & Vendite */}
+        {/* View: Statistiche */}
         {activeTab === 'dashboard' && (
           <DashboardView
             year={currentYear}
@@ -662,6 +676,11 @@ export function App() {
             summary={summary}
             onRefresh={loadComicsAndSummary}
           />
+        )}
+
+        {/* View: Vendite */}
+        {activeTab === 'sales' && (
+          <SalesView currentYear={currentYear} currentMonth={currentMonth} />
         )}
 
         {/* View: Preordini HVC & Store */}
@@ -709,27 +728,15 @@ export function App() {
           <Plus className="w-5 h-5 stroke-2" />
         </button>
 
-        {isTryyNexus ? (
-          <button
-            onClick={() => setActiveTab('orders')}
-            className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${
-              activeTab === 'orders' ? 'text-indigo-400' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Package className="w-4 h-4" />
-            <span>Preordini</span>
-          </button>
-        ) : (
-          <button
-            onClick={() => setActiveTab('dashboard')}
-            className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${
-              activeTab === 'dashboard' ? 'text-indigo-400' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <PieChart className="w-4 h-4" />
-            <span>Statistiche</span>
-          </button>
-        )}
+        <button
+          onClick={() => setActiveTab('sales')}
+          className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+            activeTab === 'sales' ? 'text-emerald-400 font-black' : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <DollarSign className="w-4 h-4" />
+          <span>Vendite</span>
+        </button>
 
         <button
           onClick={() => setActiveTab('readings')}

@@ -72,6 +72,13 @@ export interface SaleRefund {
   channel: string;
   notes?: string;
   date?: string;
+  comic_id?: number;
+  cover_url?: string;
+  local_cover_path?: string;
+  series?: string;
+  issue_number?: string;
+  purchase_price?: number;
+  comic_status?: ComicStatus;
   created_at?: string;
 }
 
