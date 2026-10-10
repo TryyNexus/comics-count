@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Comic, ComicStatus } from '../types';
-import { getComicCoverUrl } from '../utils/coverHelper';
+import { getComicCoverUrl, handleCoverError } from '../utils/coverHelper';
 import { 
   BookOpen, 
   Check, 
@@ -56,7 +56,9 @@ export const ComicCard: React.FC<ComicCardProps> = ({
             referrerPolicy="no-referrer"
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
             loading="lazy"
-            onError={() => setImgError(true)}
+            onError={(e) => {
+              handleCoverError(e, comic, () => setImgError(true));
+            }}
           />
         ) : (
           <div className="flex flex-col items-center justify-center text-slate-600 p-4 text-center w-full h-full bg-gradient-to-b from-slate-900 to-slate-950">

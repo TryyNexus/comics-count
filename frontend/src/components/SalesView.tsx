@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { SaleRefund, Comic } from '../types';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { SaleRefund, Comic, PurchasedComic } from '../types';
 import { api } from '../api';
-import { getComicCoverUrl } from '../utils/coverHelper';
+import { getComicCoverUrl, handleCoverError } from '../utils/coverHelper';
 import { 
   DollarSign, 
   Plus, 
@@ -43,8 +43,9 @@ const CHANNELS = [
 
 export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth }) => {
   const [sales, setSales] = useState<SaleRefund[]>([]);
-  const [comicsCollection, setComicsCollection] = useState<Comic[]>([]);
+  const [comicsCollection, setComicsCollection] = useState<PurchasedComic[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingCollection, setIsLoadingCollection] = useState(false);
   
   // Filters
   const [selectedYear, setSelectedYear] = useState<string>(currentYear);
@@ -59,8 +60,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
   
   // Form State
   const [comicSearchQuery, setComicSearchQuery] = useState('');
-  const [selectedComic, setSelectedComic] = useState<Comic | null>(null);
-  const [isComicDropdownOpen, setIsComicDropdownOpen] = useState(false);
+  const [selectedComic, setSelectedComic] = useState<PurchasedComic | null>(null);
   const [customTitle, setCustomTitle] = useState('');
   const [salePrice, setSalePrice] = useState('');
   const [saleChannel, setSaleChannel] = useState('Vinted');
@@ -90,25 +90,29 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
   };
 
   const loadComicsCollection = async () => {
+    setIsLoadingCollection(true);
     try {
-      const all = await api.getComics({});
+      // Carica TUTTI i fumetti acquistati dell'utente attraverso tutti gli anni e mesi
+      const all = await api.getPurchasedComics();
       setComicsCollection(all || []);
     } catch (e) {
       console.error('Errore caricamento collezione:', e);
+    } finally {
+      setIsLoadingCollection(false);
     }
   };
 
-  // Filtered Comics for Search Dropdown
+  // Filtered Comics for Search Dropdown (multi-token search su titolo, collana, editore, numero)
   const searchResultsComics = useMemo(() => {
-    if (!comicSearchQuery.trim()) {
-      return comicsCollection.slice(0, 8);
+    const q = comicSearchQuery.trim().toLowerCase();
+    if (!q) {
+      return comicsCollection.slice(0, 10);
     }
-    const q = comicSearchQuery.toLowerCase();
-    return comicsCollection.filter(c => 
-      c.title.toLowerCase().includes(q) ||
-      (c.series && c.series.toLowerCase().includes(q)) ||
-      (c.publisher_name && c.publisher_name.toLowerCase().includes(q))
-    ).slice(0, 15);
+    const tokens = q.split(/\s+/);
+    return comicsCollection.filter(c => {
+      const fullText = `${c.title} ${c.series || ''} ${c.issue_number ? '#' + c.issue_number : ''} ${c.publisher_name || ''} ${c.category || ''}`.toLowerCase();
+      return tokens.every(token => fullText.includes(token));
+    }).slice(0, 20);
   }, [comicsCollection, comicSearchQuery]);
 
   // Open Modal for New Sale
@@ -150,13 +154,12 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
     setIsModalOpen(true);
   };
 
-  const handleSelectComic = (comic: Comic) => {
+  const handleSelectComic = (comic: PurchasedComic) => {
     setSelectedComic(comic);
     setComicSearchQuery(comic.title);
-    setIsComicDropdownOpen(false);
-    // Suggest sale price based on purchase or cover price if not filled
+    // Suggest sale price based on purchase price if not filled
     if (!salePrice) {
-      const suggested = comic.purchase_price || comic.cover_price || 0;
+      const suggested = comic.purchase_price || 0;
       if (suggested > 0) setSalePrice(suggested.toFixed(2));
     }
   };
@@ -473,7 +476,9 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
                         alt={sale.title}
                         className="w-full h-full object-cover"
                         onError={(e) => {
-                          (e.target as HTMLElement).style.display = 'none';
+                          handleCoverError(e, { cover_url: sale.cover_url, local_cover_path: sale.local_cover_path }, () => {
+                            (e.target as HTMLElement).style.display = 'none';
+                          });
                         }}
                       />
                     ) : (
@@ -638,83 +643,139 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
                   </label>
                   
                   {selectedComic ? (
-                    <div className="p-3 rounded-xl bg-slate-950 border border-indigo-500/40 flex items-center justify-between gap-3">
+                    <div className="p-3 rounded-xl bg-slate-950 border border-indigo-500/50 flex items-center justify-between gap-3 shadow-inner">
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-9 h-12 rounded bg-slate-800 overflow-hidden shrink-0 flex items-center justify-center">
+                        <div className="w-10 h-14 rounded bg-slate-900 border border-slate-800 overflow-hidden shrink-0 flex items-center justify-center">
                           {selectedComic.cover_url || selectedComic.local_cover_path ? (
                             <img
-                              src={getComicCoverUrl({ cover_url: selectedComic.cover_url || undefined, local_cover_path: selectedComic.local_cover_path || undefined }) || undefined}
+                              src={getComicCoverUrl(selectedComic) || undefined}
                               alt={selectedComic.title}
                               className="w-full h-full object-cover"
+                              onError={(e) => {
+                                handleCoverError(e, selectedComic, () => {
+                                  (e.target as HTMLElement).style.display = 'none';
+                                });
+                              }}
                             />
                           ) : (
                             <BookOpen className="w-4 h-4 text-slate-500" />
                           )}
                         </div>
                         <div className="min-w-0">
+                          <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wide">Fumetto selezionato</span>
                           <div className="text-xs font-bold text-white truncate">{selectedComic.title}</div>
-                          <div className="text-[11px] text-slate-400">
-                            {selectedComic.publisher_name} • {selectedComic.year} • Pagato: <span className="text-emerald-400 font-mono">{selectedComic.purchase_price?.toFixed(2)} €</span>
+                          <div className="text-[11px] text-slate-400 mt-0.5">
+                            {selectedComic.publisher_name} • {selectedComic.month} {selectedComic.year} • Prezzo originale: <span className="text-emerald-400 font-mono font-semibold">{selectedComic.purchase_price?.toFixed(2)} €</span>
                           </div>
                         </div>
                       </div>
 
                       <button
                         type="button"
-                        onClick={() => setSelectedComic(null)}
-                        className="text-xs text-slate-400 hover:text-rose-400 px-2 py-1 rounded bg-slate-900 border border-slate-800 shrink-0"
+                        onClick={() => {
+                          setSelectedComic(null);
+                          setComicSearchQuery('');
+                        }}
+                        className="text-xs text-slate-300 hover:text-rose-400 px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800 hover:border-slate-700 shrink-0 font-medium transition cursor-pointer"
                       >
                         Cambia
                       </button>
                     </div>
                   ) : (
-                    <div className="relative">
+                    <div className="space-y-2">
                       <div className="relative">
-                        <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                         <input
                           type="text"
-                          placeholder="Digita il titolo per cercare..."
+                          placeholder="Digita per cercare tra tutti i tuoi fumetti (titolo, collana, editore)..."
                           value={comicSearchQuery}
-                          onChange={(e) => {
-                            setComicSearchQuery(e.target.value);
-                            setIsComicDropdownOpen(true);
-                          }}
-                          onFocus={() => setIsComicDropdownOpen(true)}
-                          className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                          onChange={(e) => setComicSearchQuery(e.target.value)}
+                          className="w-full pl-9 pr-8 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
+                          autoFocus
                         />
+                        {comicSearchQuery && (
+                          <button
+                            type="button"
+                            onClick={() => setComicSearchQuery('')}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5 rounded"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
 
-                      {/* Dropdown Results */}
-                      {isComicDropdownOpen && searchResultsComics.length > 0 && (
-                        <div className="absolute top-full left-0 right-0 mt-1 max-h-56 overflow-y-auto bg-slate-950 border border-slate-800 rounded-xl shadow-xl z-20 divide-y divide-slate-800/60">
-                          {searchResultsComics.map((c) => (
+                      {/* Informazioni conteggio & Risultati */}
+                      <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
+                        <span>
+                          {isLoadingCollection ? 'Caricamento collezione...' : `${searchResultsComics.length} fumetti trovati ${comicSearchQuery ? `per "${comicSearchQuery}"` : 'in collezione'}`}
+                        </span>
+                        {comicsCollection.length > 0 && (
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            Totale: {comicsCollection.length}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Lista integrata scrollabile (Inline Scroll Container) */}
+                      <div className="max-h-56 overflow-y-auto bg-slate-950/90 border border-slate-800 rounded-xl divide-y divide-slate-800/60 shadow-inner">
+                        {searchResultsComics.length === 0 ? (
+                          <div className="p-4 text-center text-xs text-slate-500">
+                            Nessun fumetto corrisponde alla ricerca.
+                            <div className="mt-1 text-[11px] text-indigo-400 cursor-pointer hover:underline" onClick={() => {
+                              setSaleType('custom');
+                              setCustomTitle(comicSearchQuery);
+                            }}>
+                              → Registralo come fumetto non censito
+                            </div>
+                          </div>
+                        ) : (
+                          searchResultsComics.map((c) => (
                             <div
                               key={c.id}
                               onClick={() => handleSelectComic(c)}
-                              className="p-2.5 hover:bg-slate-900/80 cursor-pointer flex items-center gap-3 transition"
+                              className="p-2.5 hover:bg-indigo-950/30 hover:border-indigo-500/20 cursor-pointer flex items-center justify-between gap-3 transition group"
                             >
-                              <div className="w-8 h-10 rounded bg-slate-800 overflow-hidden shrink-0 flex items-center justify-center">
-                                {c.cover_url || c.local_cover_path ? (
-                                  <img
-                                    src={getComicCoverUrl({ cover_url: c.cover_url || undefined, local_cover_path: c.local_cover_path || undefined }) || undefined}
-                                    alt={c.title}
-                                    className="w-full h-full object-cover"
-                                  />
-                                ) : (
-                                  <BookOpen className="w-3.5 h-3.5 text-slate-600" />
-                                )}
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <div className="text-xs font-bold text-white truncate">{c.title}</div>
-                                <div className="text-[10px] text-slate-400">
-                                  {c.publisher_name} • {c.year} • Acquistato a: {c.purchase_price?.toFixed(2)} €
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-8 h-11 rounded bg-slate-900 border border-slate-800 overflow-hidden shrink-0 flex items-center justify-center">
+                                  {c.cover_url || c.local_cover_path ? (
+                                    <img
+                                      src={getComicCoverUrl(c) || undefined}
+                                      alt={c.title}
+                                      className="w-full h-full object-cover"
+                                      onError={(e) => {
+                                        handleCoverError(e, c, () => {
+                                          (e.target as HTMLElement).style.display = 'none';
+                                        });
+                                      }}
+                                    />
+                                  ) : (
+                                    <BookOpen className="w-3.5 h-3.5 text-slate-600" />
+                                  )}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="text-xs font-semibold text-white truncate group-hover:text-indigo-300 transition">
+                                    {c.title}
+                                  </div>
+                                  <div className="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5">
+                                    <span className="text-slate-300 font-medium">{c.publisher_name || c.category}</span>
+                                    <span>•</span>
+                                    <span>{c.month} {c.year}</span>
+                                    {c.purchase_price > 0 && (
+                                      <>
+                                        <span>•</span>
+                                        <span className="text-emerald-400 font-mono">Pagato {c.purchase_price.toFixed(2)} €</span>
+                                      </>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                              <Check className="w-4 h-4 text-emerald-400 shrink-0 opacity-0 group-hover:opacity-100" />
+                              <div className="shrink-0 opacity-0 group-hover:opacity-100 transition px-2 py-1 rounded bg-indigo-600 text-white text-[11px] font-semibold flex items-center gap-1">
+                                <Check className="w-3 h-3" /> Seleziona
+                              </div>
                             </div>
-                          ))}
-                        </div>
-                      )}
+                          ))
+                        )}
+                      </div>
                     </div>
                   )}
 

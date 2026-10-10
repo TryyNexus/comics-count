@@ -385,7 +385,7 @@ export const api = {
     return res.json();
   },
 
-  uploadCover: async (file: File): Promise<{ localPath: string }> => {
+  uploadCover: async (file: File): Promise<{ localPath: string; dataUrl?: string }> => {
     const formData = new FormData();
     formData.append('cover', file);
     const headers = authHeaders(false);

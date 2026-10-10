@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Comic, ComicStatus, Publisher } from '../types';
-import { getComicCoverUrl } from '../utils/coverHelper';
+import { getComicCoverUrl, handleCoverError } from '../utils/coverHelper';
 import { 
   Edit2, 
   Trash2, 
@@ -167,10 +167,12 @@ export const AccountingTable: React.FC<AccountingTableProps> = ({
                   referrerPolicy="no-referrer"
                   className="w-full h-full object-cover group-hover/thumb:scale-110 transition duration-200" 
                   onError={(e) => {
-                    const img = e.currentTarget;
-                    img.style.display = 'none';
-                    const fallback = img.nextElementSibling as HTMLElement;
-                    if (fallback) fallback.style.display = 'flex';
+                    handleCoverError(e, comic, () => {
+                      const img = e.currentTarget;
+                      img.style.display = 'none';
+                      const fallback = img.nextElementSibling as HTMLElement;
+                      if (fallback) fallback.style.display = 'flex';
+                    });
                   }}
                 />
                 <div className="w-full h-full hidden flex-col items-center justify-center text-slate-600 bg-slate-950 text-[8px]">

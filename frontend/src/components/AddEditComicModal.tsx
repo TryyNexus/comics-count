@@ -234,9 +234,9 @@ export const AddEditComicModal: React.FC<AddEditComicModalProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const { localPath } = await api.uploadCover(file);
-      setLocalCoverPath(localPath);
-      setCoverUrl(localPath);
+      const res = await api.uploadCover(file);
+      setLocalCoverPath(res.localPath);
+      setCoverUrl(res.dataUrl || res.localPath);
     } catch (err) {
       alert('Errore nel caricamento del file');
     }

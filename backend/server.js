@@ -26,18 +26,78 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// Recupero on-demand delle copertine da Cloud Storage se mancanti dal disco locale
+// Recupero on-demand delle copertine (self-healing per container effimeri come Render)
 app.get('/uploads/covers/:filename', async (req, res, next) => {
   const { filename } = req.params;
   const localFile = path.join(COVERS_DIR, filename);
-  if (!fs.existsSync(localFile)) {
-    try {
-      const downloaded = await downloadCoverIfMissing(filename);
-      if (downloaded && fs.existsSync(localFile)) {
-        return res.sendFile(localFile);
-      }
-    } catch (e) {}
+
+  if (fs.existsSync(localFile)) {
+    return res.sendFile(localFile);
   }
+
+  // 1. Prova recupero da Cloud Storage se attivo (Supabase)
+  try {
+    const downloaded = await downloadCoverIfMissing(filename);
+    if (downloaded && fs.existsSync(localFile)) {
+      return res.sendFile(localFile);
+    }
+  } catch (e) {}
+
+  // 2. Self-healing da database SQLite: cerca l'URL originale o data URI della copertina
+  try {
+    const coverPathPattern = `%${filename}%`;
+    const comic = db.prepare(`
+      SELECT cover_url 
+      FROM comics 
+      WHERE local_cover_path LIKE ? 
+         OR cover_url LIKE ?
+      LIMIT 1
+    `).get(coverPathPattern, coverPathPattern);
+
+    if (comic && comic.cover_url) {
+      const coverUrl = comic.cover_url.trim();
+
+      // Se è un Data URI (base64)
+      if (coverUrl.startsWith('data:image/')) {
+        const matches = coverUrl.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/);
+        if (matches && matches[2]) {
+          const buffer = Buffer.from(matches[2], 'base64');
+          fs.writeFileSync(localFile, buffer);
+          return res.sendFile(localFile);
+        }
+      }
+
+      // Se è un URL HTTP/HTTPS esterno
+      if (coverUrl.startsWith('http')) {
+        const client = coverUrl.startsWith('https') ? require('https') : require('http');
+        const headers = {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        };
+        if (coverUrl.includes('hovistocose.it')) {
+          headers['Referer'] = 'https://www.hovistocose.it/';
+        }
+
+        return client.get(coverUrl, { headers, timeout: 12000 }, (remoteRes) => {
+          if (remoteRes.statusCode === 200) {
+            const fileStream = fs.createWriteStream(localFile);
+            remoteRes.pipe(fileStream);
+            fileStream.on('finish', () => {
+              fileStream.close();
+              res.sendFile(localFile);
+            });
+          } else {
+            // Se fallisce il salvataggio su file, reindirizza al proxy backend
+            res.redirect(`/api/proxy/image?url=${encodeURIComponent(coverUrl)}`);
+          }
+        }).on('error', () => {
+          res.redirect(`/api/proxy/image?url=${encodeURIComponent(coverUrl)}`);
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('[CoverRecover] Errore ripristino on-demand copertina:', err.message);
+  }
+
   next();
 });
 
@@ -1045,8 +1105,20 @@ app.post('/api/upload/cover', upload.single('cover'), (req, res) => {
     // Carica copertina nel Cloud Storage se attivo
     uploadCover(finalName, target).catch(() => {});
 
+    // Se l'immagine è <= 400KB, crea anche un Data URL Base64 che viene memorizzato
+    // direttamente nel database SQLite e sincronizzato permanentemente su GitHub Gist
+    let dataUrl = null;
+    try {
+      const stats = fs.statSync(target);
+      if (stats.size <= 450 * 1024) {
+        const fileBuf = fs.readFileSync(target);
+        const mime = ext.toLowerCase() === '.png' ? 'image/png' : ext.toLowerCase() === '.webp' ? 'image/webp' : 'image/jpeg';
+        dataUrl = `data:${mime};base64,${fileBuf.toString('base64')}`;
+      }
+    } catch (e) {}
+
     const publicUrl = `/uploads/covers/${finalName}`;
-    res.json({ localPath: publicUrl });
+    res.json({ localPath: publicUrl, dataUrl });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
