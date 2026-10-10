@@ -92,8 +92,18 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
   const loadComicsCollection = async () => {
     setIsLoadingCollection(true);
     try {
-      // Carica TUTTI i fumetti acquistati dell'utente attraverso tutti gli anni e mesi
-      const all = await api.getPurchasedComics();
+      // Prova prima con getPurchasedComics (filtra totali ordine e arricchisce categorie)
+      let all = await api.getPurchasedComics().catch(() => []);
+      // Se vuoto, fallback a getComics per garantire la massima compatibilità
+      if (!all || all.length === 0) {
+        const fallback = await api.getComics({}).catch(() => []);
+        if (fallback && fallback.length > 0) {
+          all = fallback.map(c => ({
+            ...c,
+            category: 'Altro' as const
+          }));
+        }
+      }
       setComicsCollection(all || []);
     } catch (e) {
       console.error('Errore caricamento collezione:', e);
@@ -106,13 +116,13 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
   const searchResultsComics = useMemo(() => {
     const q = comicSearchQuery.trim().toLowerCase();
     if (!q) {
-      return comicsCollection.slice(0, 10);
+      return comicsCollection.slice(0, 15);
     }
     const tokens = q.split(/\s+/);
     return comicsCollection.filter(c => {
-      const fullText = `${c.title} ${c.series || ''} ${c.issue_number ? '#' + c.issue_number : ''} ${c.publisher_name || ''} ${c.category || ''}`.toLowerCase();
+      const fullText = `${c.title || ''} ${c.series || ''} ${c.issue_number ? '#' + c.issue_number : ''} ${c.publisher_name || ''} ${c.category || ''}`.toLowerCase();
       return tokens.every(token => fullText.includes(token));
-    }).slice(0, 20);
+    }).slice(0, 25);
   }, [comicsCollection, comicSearchQuery]);
 
   // Open Modal for New Sale
@@ -130,6 +140,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
     setSaleNotes('');
     setMarkAsSold(true);
     setIsModalOpen(true);
+    loadComicsCollection();
   };
 
   // Open Modal to Edit Existing Sale
@@ -152,6 +163,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
     setSaleNotes(sale.notes || '');
     setMarkAsSold(false);
     setIsModalOpen(true);
+    loadComicsCollection();
   };
 
   const handleSelectComic = (comic: PurchasedComic) => {
