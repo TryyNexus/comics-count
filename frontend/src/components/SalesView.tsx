@@ -18,7 +18,8 @@ import {
   ExternalLink,
   ChevronDown,
   Sparkles,
-  ArrowUpRight
+  ArrowUpRight,
+  Filter
 } from 'lucide-react';
 
 interface SalesViewProps {
@@ -30,6 +31,8 @@ const MONTHS = [
   'Tutti i mesi', 'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
   'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'
 ];
+
+type CategoryFilter = 'Tutti' | 'Marvel' | 'DC' | 'Manga' | 'Altro';
 
 const CHANNELS = [
   'Vinted',
@@ -58,6 +61,11 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
   const [editingSale, setEditingSale] = useState<SaleRefund | null>(null);
   const [saleType, setSaleType] = useState<'registered' | 'custom'>('registered');
   
+  // Selection like ReadingsView
+  const [selectedCategory, setSelectedCategory] = useState<CategoryFilter>('Tutti');
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+
   // Form State
   const [comicSearchQuery, setComicSearchQuery] = useState('');
   const [selectedComic, setSelectedComic] = useState<PurchasedComic | null>(null);
@@ -79,6 +87,17 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
     loadComicsCollection();
   }, []);
 
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const loadSales = async () => {
     setIsLoading(true);
     try {
@@ -95,17 +114,24 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
   const loadComicsCollection = async () => {
     setIsLoadingCollection(true);
     try {
-      // 1. Prova getPurchasedComics (filtra totali ordine e arricchisce categorie)
+      // 1. Prova getPurchasedComics (filtra totali ordine e arricchisce categorie come nel Diario delle Letture)
       let all = await api.getPurchasedComics().catch(() => []);
       
       // 2. Se vuoto o errore, fallback a getComics completo
       if (!all || all.length === 0) {
         const fallback = await api.getComics({}).catch(() => []);
         if (fallback && fallback.length > 0) {
-          all = fallback.map(c => ({
-            ...c,
-            category: 'Altro' as const
-          }));
+          all = fallback.map(c => {
+            const p = (c.publisher_name || '').toLowerCase();
+            let cat: 'Marvel' | 'DC' | 'Manga' | 'Altro' = 'Altro';
+            if (p.includes('dc')) cat = 'DC';
+            else if (p.includes('marvel')) cat = 'Marvel';
+            else if (p.includes('manga') || p.includes('star') || p.includes('j-pop') || /jujutsu|chainsaw|berserk|one piece|gachiakuta|shangri|inazuma|dragon ball|naruto|bleach|seiya|wistoria/i.test(c.title)) cat = 'Manga';
+            return {
+              ...c,
+              category: cat
+            };
+          });
         }
       }
       setComicsCollection(all || []);
@@ -116,23 +142,47 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
     }
   };
 
-  // Filtered Comics for Search Dropdown (multi-token search su titolo, collana, editore, variant, ISBN)
-  const searchResultsComics = useMemo(() => {
-    const q = comicSearchQuery.trim().toLowerCase();
-    if (!q) {
-      return comicsCollection.slice(0, 30);
+  // Helper for category badge styling (same as ReadingsView)
+  const getCategoryBadgeClass = (category?: string) => {
+    switch (category) {
+      case 'DC':
+        return 'bg-sky-950/70 text-sky-300 border-sky-800/50';
+      case 'Marvel':
+        return 'bg-rose-950/70 text-rose-300 border-rose-800/50';
+      case 'Manga':
+        return 'bg-purple-950/70 text-purple-300 border-purple-800/50';
+      default:
+        return 'bg-emerald-950/70 text-emerald-300 border-emerald-800/50';
     }
-    const tokens = q.split(/\s+/).filter(Boolean);
-    return comicsCollection.filter(c => {
-      const fullText = `${c.title || ''} ${c.series || ''} ${c.issue_number ? '#' + c.issue_number : ''} ${c.publisher_name || ''} ${c.variant_info || ''} ${c.isbn || ''} ${c.category || ''}`.toLowerCase();
-      return tokens.every(token => fullText.includes(token));
-    }).slice(0, 40);
-  }, [comicsCollection, comicSearchQuery]);
+  };
+
+  // Filtered Comics like ReadingsView: category filter + letter-by-letter multi-token search
+  const filteredComics = useMemo<PurchasedComic[]>(() => {
+    let list: PurchasedComic[] = comicsCollection;
+
+    // Filter by selected category (Marvel, DC, Manga, Altro)
+    if (selectedCategory !== 'Tutti') {
+      list = list.filter(c => c.category === selectedCategory);
+    }
+
+    // Filter letter by letter: exclude titles that don't match the query
+    const q = comicSearchQuery.trim().toLowerCase();
+    if (q) {
+      const tokens = q.split(/\s+/).filter(Boolean);
+      list = list.filter(c => {
+        const fullString = `${c.title || ''} ${c.series || ''} ${c.issue_number ? '#' + c.issue_number : ''} ${c.variant_info || ''} ${c.publisher_name || ''} ${c.isbn || ''}`.toLowerCase();
+        return tokens.every(token => fullString.includes(token));
+      });
+    }
+
+    return list;
+  }, [comicsCollection, selectedCategory, comicSearchQuery]);
 
   // Open Modal for New Sale
   const handleOpenAddModal = () => {
     setEditingSale(null);
     setSaleType('registered');
+    setSelectedCategory('Tutti');
     setSelectedComic(null);
     setComicSearchQuery('');
     setCustomTitle('');
@@ -143,6 +193,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
     setSaleDate(new Date().toISOString().split('T')[0]);
     setSaleNotes('');
     setMarkAsSold(true);
+    setIsDropdownOpen(false);
     setIsModalOpen(true);
     loadComicsCollection();
   };
@@ -150,11 +201,16 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
   // Open Modal to Edit Existing Sale
   const handleOpenEditModal = (sale: SaleRefund) => {
     setEditingSale(sale);
+    setSelectedCategory('Tutti');
+    setIsDropdownOpen(false);
     if (sale.comic_id) {
       setSaleType('registered');
       const found = comicsCollection.find(c => c.id === sale.comic_id);
       setSelectedComic(found || null);
       setComicSearchQuery(sale.title);
+      if (found?.category) {
+        setSelectedCategory(found.category);
+      }
     } else {
       setSaleType('custom');
       setCustomTitle(sale.title);
@@ -173,6 +229,10 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
   const handleSelectComic = (comic: PurchasedComic) => {
     setSelectedComic(comic);
     setComicSearchQuery(comic.title);
+    if (comic.category) {
+      setSelectedCategory(comic.category);
+    }
+    setIsDropdownOpen(false);
     // Suggest sale price based on purchase price if not filled
     if (!salePrice) {
       const suggested = comic.purchase_price || 0;
@@ -659,13 +719,9 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
                 </div>
               )}
 
-              {/* Option A: Search from Comics Count collection */}
+              {/* Option A: Search from Comics Count collection (Same UX as ReadingsView) */}
               {saleType === 'registered' ? (
-                <div className="space-y-2">
-                  <label className="text-xs font-semibold text-slate-300">
-                    Cerca nella tua collezione Comics Count *
-                  </label>
-                  
+                <div className="space-y-3">
                   {selectedComic ? (
                     <div className="p-3 rounded-xl bg-white/3 border border-indigo-500/40 flex items-center justify-between gap-3 shadow-inner">
                       <div className="flex items-center gap-3 min-w-0">
@@ -686,10 +742,15 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
                           )}
                         </div>
                         <div className="min-w-0">
-                          <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wide">Fumetto selezionato</span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wide">Fumetto selezionato</span>
+                            <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold border ${getCategoryBadgeClass(selectedComic.category)}`}>
+                              {selectedComic.category}
+                            </span>
+                          </div>
                           <div className="text-xs font-bold text-white truncate">{selectedComic.title}</div>
                           <div className="text-[11px] text-slate-400 mt-0.5">
-                            {selectedComic.publisher_name} • {selectedComic.month} {selectedComic.year} • Prezzo: <span className="text-emerald-400 font-mono font-semibold">{selectedComic.purchase_price?.toFixed(2)} €</span>
+                            {selectedComic.publisher_name || selectedComic.category} • {selectedComic.month} {selectedComic.year} • Prezzo: <span className="text-emerald-400 font-mono font-semibold">{selectedComic.purchase_price?.toFixed(2)} €</span>
                           </div>
                         </div>
                       </div>
@@ -699,6 +760,7 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
                         onClick={() => {
                           setSelectedComic(null);
                           setComicSearchQuery('');
+                          setIsDropdownOpen(true);
                         }}
                         className="text-xs text-slate-300 hover:text-rose-400 px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:border-white/20 shrink-0 font-medium transition-all cursor-pointer active:scale-95"
                       >
@@ -706,99 +768,180 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
                       </button>
                     </div>
                   ) : (
-                    <div className="space-y-2">
-                      <div className="relative">
-                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                        <input
-                          type="text"
-                          placeholder="Cerca per titolo, collana, editore, variante o codice..."
-                          value={comicSearchQuery}
-                          onChange={(e) => setComicSearchQuery(e.target.value)}
-                          className="w-full pl-9 pr-8 py-2.5 rounded-xl bg-black/40 border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/20 transition-all"
-                          autoFocus
-                        />
-                        {comicSearchQuery && (
-                          <button
-                            type="button"
-                            onClick={() => setComicSearchQuery('')}
-                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5 rounded cursor-pointer"
+                    <div className="space-y-3">
+                      {/* Grid: Category Filter & Search Field */}
+                      <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
+                        {/* 1. Category Dropdown Menu */}
+                        <div className="md:col-span-5">
+                          <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center gap-1">
+                            <Filter className="w-3.5 h-3.5 text-indigo-400" /> Categoria:
+                          </label>
+                          <select
+                            value={selectedCategory}
+                            onChange={e => {
+                              setSelectedCategory(e.target.value as CategoryFilter);
+                              setIsDropdownOpen(true);
+                            }}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-2 text-white text-xs font-semibold focus:outline-hidden focus:border-indigo-500 cursor-pointer shadow-inner"
                           >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
+                            <option value="Tutti">📁 Tutte le Categorie ({comicsCollection.length})</option>
+                            <option value="Marvel">🔴 Marvel Comics ({comicsCollection.filter(c => c.category === 'Marvel').length})</option>
+                            <option value="DC">🔵 DC Comics ({comicsCollection.filter(c => c.category === 'DC').length})</option>
+                            <option value="Manga">🟣 Manga ({comicsCollection.filter(c => c.category === 'Manga').length})</option>
+                            <option value="Altro">🟢 Altro ({comicsCollection.filter(c => c.category === 'Altro').length})</option>
+                          </select>
+                        </div>
 
-                      {/* Informazioni conteggio & Risultati */}
-                      <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
-                        <span>
-                          {isLoadingCollection ? 'Caricamento collezione...' : `${searchResultsComics.length} fumetti trovati ${comicSearchQuery ? `per "${comicSearchQuery}"` : 'in collezione'}`}
-                        </span>
-                        {comicsCollection.length > 0 && (
-                          <span className="text-[10px] text-slate-500 font-mono">
-                            Disponibili: {comicsCollection.length}
-                          </span>
-                        )}
-                      </div>
+                        {/* 2. Autocomplete Input with letter-by-letter live filtering */}
+                        <div className="md:col-span-7 relative" ref={searchContainerRef}>
+                          <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center justify-between">
+                            <span className="flex items-center gap-1">
+                              <Search className="w-3.5 h-3.5 text-indigo-400" />
+                              Cerca Titolo:
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              {filteredComics.length} disp.
+                            </span>
+                          </label>
 
-                      {/* Lista integrata scrollabile (Inline Scroll Container) */}
-                      <div className="max-h-56 overflow-y-auto bg-black/40 border border-white/8 rounded-xl divide-y divide-white/4 shadow-inner">
-                        {searchResultsComics.length === 0 ? (
-                          <div className="p-4 text-center text-xs text-slate-500">
-                            Nessun fumetto corrisponde alla ricerca.
-                            <div className="mt-1 text-[11px] text-indigo-400 cursor-pointer hover:underline" onClick={() => {
-                              setSaleType('custom');
-                              setCustomTitle(comicSearchQuery);
-                            }}>
-                              → Registralo come fumetto non censito
-                            </div>
+                          <div className="relative">
+                            <input 
+                              type="text"
+                              placeholder="Scrivi il titolo lettera per lettera..."
+                              value={comicSearchQuery}
+                              onChange={e => {
+                                setComicSearchQuery(e.target.value);
+                                setIsDropdownOpen(true);
+                              }}
+                              onFocus={() => setIsDropdownOpen(true)}
+                              className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-8 py-2 text-white text-xs focus:outline-hidden focus:border-indigo-500 shadow-inner"
+                              autoFocus
+                            />
+                            <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" />
+
+                            {comicSearchQuery && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setComicSearchQuery('');
+                                  setSelectedComic(null);
+                                }}
+                                className="absolute right-2 top-2 text-slate-500 hover:text-slate-300 p-0.5 rounded transition"
+                                title="Cancella testo"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
-                        ) : (
-                          searchResultsComics.map((c) => (
-                            <div
-                              key={c.id}
-                              onClick={() => handleSelectComic(c)}
-                              className="p-2.5 hover:bg-white/5 cursor-pointer flex items-center justify-between gap-3 transition-all group"
-                            >
-                              <div className="flex items-center gap-3 min-w-0">
-                                <div className="w-8 h-11 rounded-md bg-black/50 border border-white/8 overflow-hidden shrink-0 flex items-center justify-center">
-                                  {c.cover_url || c.local_cover_path ? (
-                                    <img
-                                      src={getComicCoverUrl(c) || undefined}
-                                      alt={c.title}
-                                      className="w-full h-full object-cover"
-                                      onError={(e) => {
-                                        handleCoverError(e, c, () => {
-                                          (e.target as HTMLElement).style.display = 'none';
-                                        });
-                                      }}
-                                    />
-                                  ) : (
-                                    <BookOpen className="w-3.5 h-3.5 text-slate-600" />
-                                  )}
-                                </div>
-                                <div className="min-w-0">
-                                  <div className="text-xs font-semibold text-white truncate group-hover:text-indigo-300 transition">
-                                    {c.title}
-                                  </div>
-                                  <div className="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5">
-                                    <span className="text-slate-300 font-medium">{c.publisher_name || c.category}</span>
-                                    <span>•</span>
-                                    <span>{c.month} {c.year}</span>
-                                    {c.purchase_price > 0 && (
-                                      <>
-                                        <span>•</span>
-                                        <span className="text-emerald-400 font-mono">Pagato {c.purchase_price.toFixed(2)} €</span>
-                                      </>
-                                    )}
-                                  </div>
-                                </div>
+
+                          {/* Dropdown with live filtered comics */}
+                          {isDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden max-h-60 overflow-y-auto">
+                              <div className="bg-slate-950 px-3 py-1.5 border-b border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
+                                <span>
+                                  {filteredComics.length} fumetti trovati
+                                  {selectedCategory !== 'Tutti' && ` in ${selectedCategory}`}
+                                </span>
+                                <span className="text-[10px] text-indigo-400 font-mono">
+                                  Filtro attivo
+                                </span>
                               </div>
-                              <div className="shrink-0 opacity-0 group-hover:opacity-100 transition px-2 py-1 rounded-md bg-indigo-600 text-white text-[11px] font-semibold flex items-center gap-1">
-                                <Check className="w-3 h-3" /> Seleziona
-                              </div>
+
+                              {filteredComics.length === 0 ? (
+                                <div className="p-4 text-center">
+                                  <p className="text-xs text-slate-400 mb-1.5">
+                                    Nessun fumetto trovato {comicSearchQuery ? `con "${comicSearchQuery}"` : ''} {selectedCategory !== 'Tutti' ? `in ${selectedCategory}` : ''}.
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSaleType('custom');
+                                      setCustomTitle(comicSearchQuery);
+                                      setIsDropdownOpen(false);
+                                    }}
+                                    className="text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold underline cursor-pointer"
+                                  >
+                                    Usa "{comicSearchQuery || 'titolo'}" come fumetto esterno non registrato
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="divide-y divide-slate-800/70">
+                                  {filteredComics.slice(0, 35).map((comic: PurchasedComic) => {
+                                    const cover = getComicCoverUrl(comic);
+                                    const isSelected = (selectedComic as PurchasedComic | null)?.id === comic.id;
+
+                                    return (
+                                      <div
+                                        key={comic.id}
+                                        onClick={() => handleSelectComic(comic)}
+                                        className={`p-2.5 flex items-center gap-2.5 cursor-pointer transition hover:bg-indigo-950/40 ${
+                                          isSelected ? 'bg-indigo-950/70 border-l-4 border-indigo-500' : ''
+                                        }`}
+                                      >
+                                        <div className="w-7 h-10 shrink-0 bg-slate-950 rounded border border-slate-800 overflow-hidden flex items-center justify-center">
+                                          {cover ? (
+                                            <img 
+                                              src={cover} 
+                                              alt={comic.title} 
+                                              referrerPolicy="no-referrer"
+                                              className="w-full h-full object-cover" 
+                                              onError={(e) => {
+                                                handleCoverError(e, comic, () => {
+                                                  (e.currentTarget as HTMLElement).style.display = 'none';
+                                                });
+                                              }}
+                                            />
+                                          ) : (
+                                            <BookOpen className="w-3.5 h-3.5 text-slate-600" />
+                                          )}
+                                        </div>
+
+                                        <div className="grow min-w-0">
+                                          <div className="flex items-center gap-1.5 flex-wrap">
+                                            <span className="text-xs font-semibold text-white truncate max-w-[260px]" title={comic.title}>
+                                              {comic.title}
+                                            </span>
+                                            {comic.issue_number && (
+                                              <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-slate-800 text-slate-300">
+                                                #{comic.issue_number}
+                                              </span>
+                                            )}
+                                            {comic.variant_info && (
+                                              <span className="text-[9px] px-1 py-0.2 rounded bg-indigo-900/40 text-indigo-300 border border-indigo-800/40 truncate max-w-[100px]">
+                                                ✨ {comic.variant_info}
+                                              </span>
+                                            )}
+                                          </div>
+
+                                          <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-400">
+                                            <span className={`px-1.5 py-0.2 rounded font-bold border ${getCategoryBadgeClass(comic.category)}`}>
+                                              {comic.category}
+                                            </span>
+                                            <span>
+                                              {comic.month} {comic.year}
+                                            </span>
+                                            {comic.purchase_price > 0 && (
+                                              <>
+                                                <span className="text-slate-600">•</span>
+                                                <span className="text-emerald-400 font-mono font-medium">
+                                                  Pagato {comic.purchase_price.toFixed(2)} €
+                                                </span>
+                                              </>
+                                            )}
+                                          </div>
+                                        </div>
+
+                                        <div className="shrink-0 text-slate-400 hover:text-white">
+                                          <ChevronDown className="w-3.5 h-3.5 -rotate-90 text-slate-500" />
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
                             </div>
-                          ))
-                        )}
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}
