@@ -553,7 +553,7 @@ app.get('/api/comics/purchased', authMiddleware, (req, res) => {
       params.push(term, term);
     }
 
-    query += ` ORDER BY c.year DESC, c.month DESC, c.title ASC`;
+    query += ` ORDER BY c.title COLLATE NOCASE ASC, c.issue_number ASC, c.year DESC`;
     const rows = db.prepare(query).all(...params);
 
     const enriched = rows.map(r => {
@@ -727,6 +727,10 @@ app.delete('/api/sales/:id', authMiddleware, (req, res) => {
       return res.status(403).json({ error: 'Non autorizzato a eliminare questa vendita' });
     }
     db.prepare('DELETE FROM sales_refunds WHERE id = ?').run(saleId);
+    if (existing.comic_id) {
+      db.prepare("UPDATE comics SET status = 'Acquistato', updated_at = datetime('now') WHERE id = ? AND user_id = ? AND status = 'Venduto'").run(existing.comic_id, userId);
+      broadcastSyncEvent(userId, 'comic_status_changed', { id: Number(existing.comic_id), status: 'Acquistato' });
+    }
     broadcastSyncEvent(userId, 'sales_updated', { id: saleId });
     res.json({ success: true });
   } catch (e) {
@@ -851,7 +855,12 @@ app.post('/api/readings', authMiddleware, (req, res) => {
 app.delete('/api/readings/:id', authMiddleware, (req, res) => {
   try {
     const userId = req.user.id;
+    const existing = db.prepare('SELECT comic_id FROM readings WHERE id = ? AND user_id = ?').get(req.params.id, userId);
     db.prepare('DELETE FROM readings WHERE id = ? AND user_id = ?').run(req.params.id, userId);
+    if (existing && existing.comic_id) {
+      db.prepare("UPDATE comics SET status = 'Acquistato', updated_at = datetime('now') WHERE id = ? AND user_id = ? AND status = 'Letto'").run(existing.comic_id, userId);
+      broadcastSyncEvent(userId, 'comic_status_changed', { id: Number(existing.comic_id), status: 'Acquistato' });
+    }
     broadcastSyncEvent(userId, 'readings_updated', { id: Number(req.params.id) });
     res.json({ success: true });
   } catch (e) {

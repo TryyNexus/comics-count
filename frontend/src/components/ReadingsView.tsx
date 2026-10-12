@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Reading, PurchasedComic } from '../types';
+import { Reading, PurchasedComic, ComicStatus } from '../types';
 import { api } from '../api';
 import { getComicCoverUrl } from '../utils/coverHelper';
 import { 
@@ -15,12 +15,15 @@ import {
   ChevronDown,
   Calendar,
   Layers,
-  Sparkles
+  Sparkles,
+  RefreshCw
 } from 'lucide-react';
 
 interface ReadingsViewProps {
   currentYear: string;
   currentMonth: string;
+  onStatusChange?: (id: number, status: ComicStatus) => void;
+  onComicsRefresh?: () => void;
 }
 
 const MONTHS = [
@@ -30,7 +33,12 @@ const MONTHS = [
 
 type CategoryFilter = 'Tutti' | 'Marvel' | 'DC' | 'Manga' | 'Altro';
 
-export const ReadingsView: React.FC<ReadingsViewProps> = ({ currentYear, currentMonth }) => {
+export const ReadingsView: React.FC<ReadingsViewProps> = ({ 
+  currentYear, 
+  currentMonth,
+  onStatusChange,
+  onComicsRefresh
+}) => {
   const [readings, setReadings] = useState<Reading[]>([]);
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [isAdding, setIsAdding] = useState(false);
@@ -136,12 +144,13 @@ export const ReadingsView: React.FC<ReadingsViewProps> = ({ currentYear, current
       return;
     }
 
+    const savedComicId = selectedComic?.id;
     setIsSaving(true);
     try {
       const readingCategory = selectedComic?.category || (selectedCategory === 'Tutti' ? 'Altro' : selectedCategory);
 
       await api.createReading({
-        comic_id: selectedComic?.id || undefined,
+        comic_id: savedComicId || undefined,
         title: finalTitle,
         year: currentYear,
         month: selectedMonth,
@@ -150,6 +159,11 @@ export const ReadingsView: React.FC<ReadingsViewProps> = ({ currentYear, current
         notes: notes.trim() || undefined
       });
 
+      if (savedComicId) {
+        onStatusChange?.(savedComicId, 'Letto');
+      }
+      onComicsRefresh?.();
+
       // Reset form
       setSearchQuery('');
       setSelectedComic(null);
@@ -157,6 +171,7 @@ export const ReadingsView: React.FC<ReadingsViewProps> = ({ currentYear, current
       setRating(5);
       setIsAdding(false);
       loadReadings();
+      loadPurchasedComics();
     } catch (e: any) {
       alert('Errore nel salvataggio della lettura: ' + (e.message || 'Errore sconosciuto'));
     } finally {
@@ -167,8 +182,14 @@ export const ReadingsView: React.FC<ReadingsViewProps> = ({ currentYear, current
   const handleDelete = async (id: number) => {
     if (!confirm('Eliminare questa lettura registrata?')) return;
     try {
+      const readingToDelete = readings.find(r => r.id === id);
       await api.deleteReading(id);
+      if (readingToDelete?.comic_id) {
+        onStatusChange?.(readingToDelete.comic_id, 'Acquistato');
+      }
+      onComicsRefresh?.();
       loadReadings();
+      loadPurchasedComics();
     } catch (e) {
       alert('Errore nella cancellazione');
     }
@@ -275,181 +296,11 @@ export const ReadingsView: React.FC<ReadingsViewProps> = ({ currentYear, current
               </span>
             </div>
 
-            {/* Row 1: Category Filter & Letter-by-letter Search Combobox */}
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
-              {/* Category Dropdown Menu */}
-              <div className="md:col-span-4">
-                <label className="block text-[11px] font-semibold text-slate-300 mb-1.5 flex items-center gap-1">
-                  <Filter className="w-3.5 h-3.5 text-indigo-400" /> Categoria:
-                </label>
-                <select
-                  value={selectedCategory}
-                  onChange={e => {
-                    setSelectedCategory(e.target.value as CategoryFilter);
-                    setIsDropdownOpen(true);
-                  }}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-xs font-semibold focus:outline-hidden focus:border-purple-500 cursor-pointer shadow-inner"
-                >
-                  <option value="Tutti">📁 Tutte le Categorie ({purchasedComics.length})</option>
-                  <option value="Marvel">🔴 Marvel Comics ({purchasedComics.filter(c => c.category === 'Marvel').length})</option>
-                  <option value="DC">🔵 DC Comics ({purchasedComics.filter(c => c.category === 'DC').length})</option>
-                  <option value="Manga">🟣 Manga ({purchasedComics.filter(c => c.category === 'Manga').length})</option>
-                  <option value="Altro">🟢 Altro / Graphic Novel ({purchasedComics.filter(c => c.category === 'Altro').length})</option>
-                </select>
-              </div>
-
-              {/* Autocomplete Input with letter-by-letter filtering */}
-              <div className="md:col-span-8 relative" ref={searchContainerRef}>
-                <label className="block text-[11px] font-semibold text-slate-300 mb-1.5 flex items-center justify-between">
-                  <span className="flex items-center gap-1">
-                    <Search className="w-3.5 h-3.5 text-purple-400" />
-                    Cerca Titolo (scrivi lettera per lettera):
-                  </span>
-                  {selectedComic && (
-                    <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
-                      <Check className="w-3 h-3" /> Collegato ad acquisto
-                    </span>
-                  )}
-                </label>
-
-                <div className="relative">
-                  <input 
-                    type="text"
-                    required
-                    placeholder={`Scrivi il titolo (es. Absolute Batman, Berserk, Spider-Man...)...`}
-                    value={searchQuery}
-                    onChange={e => {
-                      setSearchQuery(e.target.value);
-                      setIsDropdownOpen(true);
-                      if (selectedComic && selectedComic.title !== e.target.value) {
-                        setSelectedComic(null);
-                      }
-                    }}
-                    onFocus={() => setIsDropdownOpen(true)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-9 pr-9 py-2 text-white text-xs focus:outline-hidden focus:border-purple-500 shadow-inner"
-                  />
-                  <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
-
-                  {searchQuery && (
-                    <button
-                      type="button"
-                      onClick={handleClearSelectedComic}
-                      className="absolute right-2.5 top-2.5 text-slate-500 hover:text-slate-300 p-0.5 rounded transition"
-                      title="Cancella testo"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-
-                {/* Dropdown with live filtered comics */}
-                {isDropdownOpen && (
-                  <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden max-h-72 overflow-y-auto">
-                    {/* Header with match count */}
-                    <div className="bg-slate-950 px-3 py-1.5 border-b border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
-                      <span>
-                        {filteredComics.length} fumetti trovati
-                        {selectedCategory !== 'Tutti' && ` in ${selectedCategory}`}
-                      </span>
-                      <span className="text-[10px] text-purple-400 font-mono">
-                        Filtro attivo lettera per lettera
-                      </span>
-                    </div>
-
-                    {filteredComics.length === 0 ? (
-                      <div className="p-4 text-center">
-                        <p className="text-xs text-slate-400 mb-2">
-                          Nessun fumetto trovato con "{searchQuery}" nella categoria {selectedCategory}.
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => setIsDropdownOpen(false)}
-                          className="text-[11px] text-purple-400 hover:text-purple-300 font-semibold underline cursor-pointer"
-                        >
-                          Usa comunque "{searchQuery}" come titolo manuale
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="divide-y divide-slate-800/70">
-                        {filteredComics.slice(0, 30).map((comic) => {
-                          const cover = getComicCoverUrl(comic);
-                          const isSelected = selectedComic?.id === comic.id;
-
-                          return (
-                            <div
-                              key={comic.id}
-                              onClick={() => handleSelectComic(comic)}
-                              className={`p-2.5 flex items-center gap-3 cursor-pointer transition hover:bg-purple-950/30 ${
-                                isSelected ? 'bg-purple-950/60 border-l-4 border-purple-500' : ''
-                              }`}
-                            >
-                              {/* Mini Thumbnail */}
-                              <div className="w-7 h-10 shrink-0 bg-slate-950 rounded border border-slate-800 overflow-hidden flex items-center justify-center">
-                                {cover ? (
-                                  <img 
-                                    src={cover} 
-                                    alt={comic.title} 
-                                    referrerPolicy="no-referrer"
-                                    className="w-full h-full object-cover" 
-                                    onError={(e) => {
-                                      (e.currentTarget as HTMLElement).style.display = 'none';
-                                    }}
-                                  />
-                                ) : (
-                                  <BookOpen className="w-3.5 h-3.5 text-slate-600" />
-                                )}
-                              </div>
-
-                              {/* Title & Metadata */}
-                              <div className="grow min-w-0">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="text-xs font-semibold text-white truncate max-w-[340px]" title={comic.title}>
-                                    {comic.title}
-                                  </span>
-                                  {comic.issue_number && (
-                                    <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-slate-800 text-slate-300">
-                                      #{comic.issue_number}
-                                    </span>
-                                  )}
-                                  {comic.variant_info && (
-                                    <span className="text-[9px] px-1 py-0.2 rounded bg-purple-900/40 text-purple-300 border border-purple-800/40 truncate max-w-[120px]">
-                                      ✨ {comic.variant_info}
-                                    </span>
-                                  )}
-                                </div>
-
-                                <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-400">
-                                  <span className={`px-1.5 py-0.2 rounded font-bold border ${getCategoryBadgeClass(comic.category)}`}>
-                                    {comic.category}
-                                  </span>
-                                  <span>
-                                    Acquistato: {comic.month} {comic.year}
-                                  </span>
-                                  <span className="text-slate-600">•</span>
-                                  <span className="italic text-slate-400">{comic.channel}</span>
-                                </div>
-                              </div>
-
-                              {isSelected && (
-                                <div className="shrink-0 p-1 rounded-full bg-purple-600 text-white">
-                                  <Check className="w-3 h-3" />
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Selected Comic Preview Card */}
-            {selectedComic && (
-              <div className="p-3 rounded-xl bg-purple-950/20 border border-purple-500/30 flex items-center justify-between gap-3 animate-fadeIn">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-14 shrink-0 bg-slate-900 rounded-md border border-purple-500/40 overflow-hidden shadow">
+            {/* Comic Selection: Card if selected, or 2-Step Selector */}
+            {selectedComic ? (
+              <div className="p-3.5 rounded-xl bg-purple-950/40 border border-purple-500/50 flex items-center justify-between gap-3 shadow-lg">
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-11 h-15 shrink-0 bg-slate-900 rounded-lg border border-purple-500/40 overflow-hidden shadow">
                     {getComicCoverUrl(selectedComic) ? (
                       <img 
                         src={getComicCoverUrl(selectedComic)!} 
@@ -459,20 +310,26 @@ export const ReadingsView: React.FC<ReadingsViewProps> = ({ currentYear, current
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-slate-600">
-                        <BookOpen className="w-4 h-4" />
+                        <BookOpen className="w-5 h-5" />
                       </div>
                     )}
                   </div>
                   <div className="min-w-0">
-                    <span className="text-[10px] font-bold text-purple-400 uppercase tracking-wide">Fumetto selezionato dalla collezione</span>
-                    <h5 className="text-xs font-bold text-white truncate" title={selectedComic.title}>
-                      {selectedComic.title}
-                    </h5>
-                    <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-400">
-                      <span className={`px-1.5 py-0.2 rounded font-semibold border ${getCategoryBadgeClass(selectedComic.category)}`}>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] font-bold text-purple-400 uppercase tracking-wide">Fumetto selezionato dalla collezione</span>
+                      <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold border ${getCategoryBadgeClass(selectedComic.category)}`}>
                         {selectedComic.category}
                       </span>
+                    </div>
+                    <h5 className="text-sm font-bold text-white truncate mt-0.5" title={selectedComic.title}>
+                      {selectedComic.title} {selectedComic.issue_number ? `#${selectedComic.issue_number}` : ''}
+                    </h5>
+                    <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-400 flex-wrap">
+                      <span>{selectedComic.publisher_name || selectedComic.category}</span>
+                      <span>•</span>
                       <span>Acquisto: {selectedComic.month} {selectedComic.year}</span>
+                      <span>•</span>
+                      <span className="text-purple-300 font-medium">Stato attuale: {selectedComic.status}</span>
                     </div>
                   </div>
                 </div>
@@ -480,10 +337,143 @@ export const ReadingsView: React.FC<ReadingsViewProps> = ({ currentYear, current
                 <button
                   type="button"
                   onClick={handleClearSelectedComic}
-                  className="px-2.5 py-1 text-[11px] font-semibold text-purple-300 hover:text-white bg-purple-900/40 hover:bg-purple-900/60 border border-purple-700/40 rounded-lg transition"
+                  className="px-3 py-1.5 text-xs font-semibold text-purple-300 hover:text-white bg-purple-900/50 hover:bg-purple-800/60 border border-purple-500/40 rounded-xl transition flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95"
                 >
-                  Cambia
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Cambia fumetto
                 </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
+                  {/* Step 1: Category Dropdown */}
+                  <div className="md:col-span-4">
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center gap-1">
+                      <Filter className="w-3.5 h-3.5 text-purple-400" /> 1. Scegli Categoria:
+                    </label>
+                    <select
+                      value={selectedCategory}
+                      onChange={e => {
+                        setSelectedCategory(e.target.value as CategoryFilter);
+                        setIsDropdownOpen(false);
+                      }}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-xs font-semibold focus:outline-hidden focus:border-purple-500 cursor-pointer shadow-inner"
+                    >
+                      <option value="Tutti">📁 Tutte le Categorie ({purchasedComics.length})</option>
+                      <option value="Marvel">🔴 Marvel Comics ({purchasedComics.filter(c => c.category === 'Marvel').length})</option>
+                      <option value="DC">🔵 DC Comics ({purchasedComics.filter(c => c.category === 'DC').length})</option>
+                      <option value="Manga">🟣 Manga ({purchasedComics.filter(c => c.category === 'Manga').length})</option>
+                      <option value="Altro">🟢 Altro / Graphic Novel ({purchasedComics.filter(c => c.category === 'Altro').length})</option>
+                    </select>
+                  </div>
+
+                  {/* Step 2: Direct Comic Selector Dropdown */}
+                  <div className="md:col-span-8">
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center justify-between">
+                      <span className="flex items-center gap-1">
+                        <BookOpen className="w-3.5 h-3.5 text-purple-400" /> 2. Scegli Fumetto dalla Collezione:
+                      </span>
+                      <span className="text-[10px] text-purple-300 font-mono">
+                        {filteredComics.length} disponibili
+                      </span>
+                    </label>
+                    <select
+                      value=""
+                      onChange={e => {
+                        const found = purchasedComics.find(c => c.id === Number(e.target.value));
+                        if (found) handleSelectComic(found);
+                      }}
+                      className="w-full bg-slate-900 border border-purple-500/50 rounded-xl px-3 py-2 text-white text-xs font-semibold focus:outline-hidden focus:border-purple-400 cursor-pointer shadow-inner"
+                    >
+                      <option value="">-- Clicca qui e seleziona il fumetto ({filteredComics.length}) --</option>
+                      {filteredComics.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.title} {c.issue_number ? `#${c.issue_number}` : ''} ({c.publisher_name || c.category} • {c.month} {c.year} - {c.status})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Optional Fast Search Filter or Manual Title */}
+                <div className="relative" ref={searchContainerRef}>
+                  <label className="block text-[11px] font-semibold text-slate-400 mb-1 flex items-center justify-between">
+                    <span className="flex items-center gap-1">
+                      <Search className="w-3.5 h-3.5 text-slate-400" /> Oppure filtra per nome o digita un titolo manuale:
+                    </span>
+                  </label>
+                  <div className="relative">
+                    <input 
+                      type="text"
+                      placeholder="Cerca per titolo (es. Batman, Berserk, Spider-Man)..."
+                      value={searchQuery}
+                      onChange={e => {
+                        setSearchQuery(e.target.value);
+                        setIsDropdownOpen(true);
+                      }}
+                      onFocus={() => setIsDropdownOpen(true)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-9 pr-9 py-2 text-white text-xs focus:outline-hidden focus:border-purple-500 shadow-inner"
+                    />
+                    <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => { setSearchQuery(''); setIsDropdownOpen(false); }}
+                        className="absolute right-2.5 top-2.5 text-slate-500 hover:text-slate-300 p-0.5 rounded transition cursor-pointer"
+                        title="Cancella ricerca"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Dropdown results when searching */}
+                  {isDropdownOpen && searchQuery.trim() && (
+                    <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden max-h-60 overflow-y-auto">
+                      <div className="bg-slate-950 px-3 py-1.5 border-b border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
+                        <span>{filteredComics.length} fumetti trovati per "{searchQuery}"</span>
+                        <button 
+                          type="button"
+                          onClick={() => setIsDropdownOpen(false)}
+                          className="text-[10px] text-purple-400 hover:underline cursor-pointer"
+                        >
+                          Usa come titolo manuale
+                        </button>
+                      </div>
+                      {filteredComics.length === 0 ? (
+                        <div className="p-3 text-center text-xs text-slate-400">
+                          Nessun fumetto in collezione trovato. Verrà salvato come titolo manuale "{searchQuery}".
+                        </div>
+                      ) : (
+                        <div className="divide-y divide-slate-800/70">
+                          {filteredComics.slice(0, 20).map(c => {
+                            const cover = getComicCoverUrl(c);
+                            return (
+                              <div
+                                key={c.id}
+                                onPointerDown={(e) => { e.preventDefault(); handleSelectComic(c); }}
+                                onClick={() => handleSelectComic(c)}
+                                className="p-2.5 flex items-center gap-3 cursor-pointer transition hover:bg-purple-950/40"
+                              >
+                                <div className="w-7 h-10 shrink-0 bg-slate-950 rounded border border-slate-800 overflow-hidden flex items-center justify-center">
+                                  {cover ? (
+                                    <img src={cover} alt={c.title} className="w-full h-full object-cover" />
+                                  ) : (
+                                    <BookOpen className="w-3.5 h-3.5 text-slate-600" />
+                                  )}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-xs font-semibold text-white truncate">{c.title} {c.issue_number ? `#${c.issue_number}` : ''}</div>
+                                  <div className="text-[10px] text-slate-400 mt-0.5">{c.publisher_name || c.category} • {c.month} {c.year} • {c.status}</div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 

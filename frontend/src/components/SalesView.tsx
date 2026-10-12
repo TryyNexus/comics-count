@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { SaleRefund, Comic, PurchasedComic } from '../types';
+import { SaleRefund, Comic, PurchasedComic, ComicStatus } from '../types';
 import { api } from '../api';
 import { getComicCoverUrl, handleCoverError } from '../utils/coverHelper';
 import { 
@@ -19,12 +19,15 @@ import {
   ChevronDown,
   Sparkles,
   ArrowUpRight,
-  Filter
+  Filter,
+  RefreshCw
 } from 'lucide-react';
 
 interface SalesViewProps {
   currentYear: string;
   currentMonth: string;
+  onStatusChange?: (id: number, status: ComicStatus) => void;
+  onComicsRefresh?: () => void;
 }
 
 const MONTHS = [
@@ -44,7 +47,12 @@ const CHANNELS = [
   'Altro'
 ];
 
-export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth }) => {
+export const SalesView: React.FC<SalesViewProps> = ({ 
+  currentYear, 
+  currentMonth,
+  onStatusChange,
+  onComicsRefresh
+}) => {
   const [sales, setSales] = useState<SaleRefund[]>([]);
   const [comicsCollection, setComicsCollection] = useState<PurchasedComic[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -268,11 +276,19 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
         markAsSold: saleType === 'registered' && !!selectedComic && markAsSold
       };
 
+      const savedComicId = saleType === 'registered' && selectedComic ? selectedComic.id : undefined;
+      const shouldMarkAsSold = saleType === 'registered' && !!selectedComic && markAsSold;
+
       if (editingSale) {
         await api.updateSale(editingSale.id, payload);
       } else {
         await api.createSale(payload);
       }
+
+      if (savedComicId && shouldMarkAsSold) {
+        onStatusChange?.(savedComicId, 'Venduto');
+      }
+      onComicsRefresh?.();
 
       setIsModalOpen(false);
       loadSales();
@@ -287,8 +303,14 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
   const handleDelete = async (id: number, title: string) => {
     if (!window.confirm(`Sei sicuro di voler eliminare la vendita di "${title}"?`)) return;
     try {
+      const saleToDelete = sales.find(s => s.id === id);
       await api.deleteSale(id);
+      if (saleToDelete?.comic_id) {
+        onStatusChange?.(saleToDelete.comic_id, 'Acquistato');
+      }
+      onComicsRefresh?.();
       loadSales();
+      loadComicsCollection();
     } catch (e: any) {
       alert(e.message || 'Errore durante la cancellazione');
     }
@@ -723,9 +745,9 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
               {saleType === 'registered' ? (
                 <div className="space-y-3">
                   {selectedComic ? (
-                    <div className="p-3 rounded-xl bg-white/3 border border-indigo-500/40 flex items-center justify-between gap-3 shadow-inner">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-10 h-14 rounded-lg bg-black/50 border border-white/10 overflow-hidden shrink-0 flex items-center justify-center">
+                    <div className="p-3.5 rounded-xl bg-indigo-950/40 border border-indigo-500/50 flex items-center justify-between gap-3 shadow-lg">
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        <div className="w-11 h-15 shrink-0 bg-slate-900 rounded-lg border border-indigo-500/40 overflow-hidden shadow">
                           {selectedComic.cover_url || selectedComic.local_cover_path ? (
                             <img
                               src={getComicCoverUrl(selectedComic) || undefined}
@@ -738,7 +760,9 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
                               }}
                             />
                           ) : (
-                            <BookOpen className="w-4 h-4 text-slate-500" />
+                            <div className="w-full h-full flex items-center justify-center text-slate-600">
+                              <BookOpen className="w-5 h-5" />
+                            </div>
                           )}
                         </div>
                         <div className="min-w-0">
@@ -748,9 +772,17 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
                               {selectedComic.category}
                             </span>
                           </div>
-                          <div className="text-xs font-bold text-white truncate">{selectedComic.title}</div>
-                          <div className="text-[11px] text-slate-400 mt-0.5">
-                            {selectedComic.publisher_name || selectedComic.category} • {selectedComic.month} {selectedComic.year} • Prezzo: <span className="text-emerald-400 font-mono font-semibold">{selectedComic.purchase_price?.toFixed(2)} €</span>
+                          <h5 className="text-sm font-bold text-white truncate mt-0.5" title={selectedComic.title}>
+                            {selectedComic.title} {selectedComic.issue_number ? `#${selectedComic.issue_number}` : ''}
+                          </h5>
+                          <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-400 flex-wrap">
+                            <span>{selectedComic.publisher_name || selectedComic.category}</span>
+                            <span>•</span>
+                            <span>{selectedComic.month} {selectedComic.year}</span>
+                            <span>•</span>
+                            <span>Pagato: <strong className="text-emerald-400 font-mono font-semibold">{selectedComic.purchase_price?.toFixed(2)} €</strong></span>
+                            <span>•</span>
+                            <span className="text-indigo-300 font-medium">Stato: {selectedComic.status}</span>
                           </div>
                         </div>
                       </div>
@@ -760,29 +792,29 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
                         onClick={() => {
                           setSelectedComic(null);
                           setComicSearchQuery('');
-                          setIsDropdownOpen(true);
+                          setIsDropdownOpen(false);
                         }}
-                        className="text-xs text-slate-300 hover:text-rose-400 px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:border-white/20 shrink-0 font-medium transition-all cursor-pointer active:scale-95"
+                        className="px-3 py-1.5 text-xs font-semibold text-indigo-300 hover:text-white bg-indigo-900/50 hover:bg-indigo-800/60 border border-indigo-500/40 rounded-xl transition flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95"
                       >
-                        Cambia
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Cambia fumetto
                       </button>
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {/* Grid: Category Filter & Search Field */}
                       <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
-                        {/* 1. Category Dropdown Menu */}
+                        {/* Step 1: Category Dropdown Menu */}
                         <div className="md:col-span-5">
                           <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center gap-1">
-                            <Filter className="w-3.5 h-3.5 text-indigo-400" /> Categoria:
+                            <Filter className="w-3.5 h-3.5 text-indigo-400" /> 1. Scegli Categoria:
                           </label>
                           <select
                             value={selectedCategory}
                             onChange={e => {
                               setSelectedCategory(e.target.value as CategoryFilter);
-                              setIsDropdownOpen(true);
+                              setIsDropdownOpen(false);
                             }}
-                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-2 text-white text-xs font-semibold focus:outline-hidden focus:border-indigo-500 cursor-pointer shadow-inner"
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-2 text-white text-xs font-semibold focus:outline-hidden focus:border-indigo-500 cursor-pointer shadow-inner"
                           >
                             <option value="Tutti">📁 Tutte le Categorie ({comicsCollection.length})</option>
                             <option value="Marvel">🔴 Marvel Comics ({comicsCollection.filter(c => c.category === 'Marvel').length})</option>
@@ -792,156 +824,131 @@ export const SalesView: React.FC<SalesViewProps> = ({ currentYear, currentMonth 
                           </select>
                         </div>
 
-                        {/* 2. Autocomplete Input with letter-by-letter live filtering */}
-                        <div className="md:col-span-7 relative" ref={searchContainerRef}>
+                        {/* Step 2: Direct Comic Selector Dropdown */}
+                        <div className="md:col-span-7">
                           <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center justify-between">
                             <span className="flex items-center gap-1">
-                              <Search className="w-3.5 h-3.5 text-indigo-400" />
-                              Cerca Titolo:
+                              <BookOpen className="w-3.5 h-3.5 text-indigo-400" /> 2. Scegli Fumetto dalla Collezione:
                             </span>
-                            <span className="text-[10px] text-slate-400 font-mono">
-                              {filteredComics.length} disp.
+                            <span className="text-[10px] text-indigo-300 font-mono">
+                              {filteredComics.length} disponibili
                             </span>
                           </label>
+                          <select
+                            value=""
+                            onChange={e => {
+                              const found = comicsCollection.find(c => c.id === Number(e.target.value));
+                              if (found) handleSelectComic(found);
+                            }}
+                            className="w-full bg-slate-900 border border-indigo-500/50 rounded-xl px-3 py-2 text-white text-xs font-semibold focus:outline-hidden focus:border-indigo-400 cursor-pointer shadow-inner"
+                          >
+                            <option value="">-- Clicca qui e seleziona il fumetto ({filteredComics.length}) --</option>
+                            {filteredComics.map(c => (
+                              <option key={c.id} value={c.id}>
+                                {c.title} {c.issue_number ? '#' + c.issue_number : ''} ({c.publisher_name || c.category} • {c.month} {c.year} - {c.status})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
 
-                          <div className="relative">
-                            <input 
-                              type="text"
-                              placeholder="Scrivi il titolo lettera per lettera..."
-                              value={comicSearchQuery}
-                              onChange={e => {
-                                setComicSearchQuery(e.target.value);
-                                setIsDropdownOpen(true);
+                      {/* Optional Search / Live Filter Field */}
+                      <div className="relative" ref={searchContainerRef}>
+                        <label className="block text-[11px] font-semibold text-slate-400 mb-1 flex items-center justify-between">
+                          <span className="flex items-center gap-1">
+                            <Search className="w-3.5 h-3.5 text-slate-400" /> Oppure filtra per titolo:
+                          </span>
+                        </label>
+                        <div className="relative">
+                          <input 
+                            type="text"
+                            placeholder="Cerca per titolo (es. Batman, Berserk, Spider-Man)..."
+                            value={comicSearchQuery}
+                            onChange={e => {
+                              setComicSearchQuery(e.target.value);
+                              setIsDropdownOpen(true);
+                            }}
+                            onFocus={() => setIsDropdownOpen(true)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-9 pr-9 py-2 text-white text-xs focus:outline-hidden focus:border-indigo-500 shadow-inner"
+                          />
+                          <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+
+                          {comicSearchQuery && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setComicSearchQuery('');
+                                setIsDropdownOpen(false);
                               }}
-                              onFocus={() => setIsDropdownOpen(true)}
-                              className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-8 py-2 text-white text-xs focus:outline-hidden focus:border-indigo-500 shadow-inner"
-                              autoFocus
-                            />
-                            <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" />
-
-                            {comicSearchQuery && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setComicSearchQuery('');
-                                  setSelectedComic(null);
-                                }}
-                                className="absolute right-2 top-2 text-slate-500 hover:text-slate-300 p-0.5 rounded transition"
-                                title="Cancella testo"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-
-                          {/* Dropdown with live filtered comics */}
-                          {isDropdownOpen && (
-                            <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden max-h-60 overflow-y-auto">
-                              <div className="bg-slate-950 px-3 py-1.5 border-b border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
-                                <span>
-                                  {filteredComics.length} fumetti trovati
-                                  {selectedCategory !== 'Tutti' && ` in ${selectedCategory}`}
-                                </span>
-                                <span className="text-[10px] text-indigo-400 font-mono">
-                                  Filtro attivo
-                                </span>
-                              </div>
-
-                              {filteredComics.length === 0 ? (
-                                <div className="p-4 text-center">
-                                  <p className="text-xs text-slate-400 mb-1.5">
-                                    Nessun fumetto trovato {comicSearchQuery ? `con "${comicSearchQuery}"` : ''} {selectedCategory !== 'Tutti' ? `in ${selectedCategory}` : ''}.
-                                  </p>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setSaleType('custom');
-                                      setCustomTitle(comicSearchQuery);
-                                      setIsDropdownOpen(false);
-                                    }}
-                                    className="text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold underline cursor-pointer"
-                                  >
-                                    Usa "{comicSearchQuery || 'titolo'}" come fumetto esterno non registrato
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className="divide-y divide-slate-800/70">
-                                  {filteredComics.slice(0, 35).map((comic: PurchasedComic) => {
-                                    const cover = getComicCoverUrl(comic);
-                                    const isSelected = (selectedComic as PurchasedComic | null)?.id === comic.id;
-
-                                    return (
-                                      <div
-                                        key={comic.id}
-                                        onClick={() => handleSelectComic(comic)}
-                                        className={`p-2.5 flex items-center gap-2.5 cursor-pointer transition hover:bg-indigo-950/40 ${
-                                          isSelected ? 'bg-indigo-950/70 border-l-4 border-indigo-500' : ''
-                                        }`}
-                                      >
-                                        <div className="w-7 h-10 shrink-0 bg-slate-950 rounded border border-slate-800 overflow-hidden flex items-center justify-center">
-                                          {cover ? (
-                                            <img 
-                                              src={cover} 
-                                              alt={comic.title} 
-                                              referrerPolicy="no-referrer"
-                                              className="w-full h-full object-cover" 
-                                              onError={(e) => {
-                                                handleCoverError(e, comic, () => {
-                                                  (e.currentTarget as HTMLElement).style.display = 'none';
-                                                });
-                                              }}
-                                            />
-                                          ) : (
-                                            <BookOpen className="w-3.5 h-3.5 text-slate-600" />
-                                          )}
-                                        </div>
-
-                                        <div className="grow min-w-0">
-                                          <div className="flex items-center gap-1.5 flex-wrap">
-                                            <span className="text-xs font-semibold text-white truncate max-w-[260px]" title={comic.title}>
-                                              {comic.title}
-                                            </span>
-                                            {comic.issue_number && (
-                                              <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-slate-800 text-slate-300">
-                                                #{comic.issue_number}
-                                              </span>
-                                            )}
-                                            {comic.variant_info && (
-                                              <span className="text-[9px] px-1 py-0.2 rounded bg-indigo-900/40 text-indigo-300 border border-indigo-800/40 truncate max-w-[100px]">
-                                                ✨ {comic.variant_info}
-                                              </span>
-                                            )}
-                                          </div>
-
-                                          <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-400">
-                                            <span className={`px-1.5 py-0.2 rounded font-bold border ${getCategoryBadgeClass(comic.category)}`}>
-                                              {comic.category}
-                                            </span>
-                                            <span>
-                                              {comic.month} {comic.year}
-                                            </span>
-                                            {comic.purchase_price > 0 && (
-                                              <>
-                                                <span className="text-slate-600">•</span>
-                                                <span className="text-emerald-400 font-mono font-medium">
-                                                  Pagato {comic.purchase_price.toFixed(2)} €
-                                                </span>
-                                              </>
-                                            )}
-                                          </div>
-                                        </div>
-
-                                        <div className="shrink-0 text-slate-400 hover:text-white">
-                                          <ChevronDown className="w-3.5 h-3.5 -rotate-90 text-slate-500" />
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
+                              className="absolute right-2.5 top-2.5 text-slate-500 hover:text-slate-300 p-0.5 rounded transition cursor-pointer"
+                              title="Cancella ricerca"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
                           )}
                         </div>
+
+                        {/* Search Dropdown with live results */}
+                        {isDropdownOpen && comicSearchQuery.trim() && (
+                          <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden max-h-60 overflow-y-auto">
+                            <div className="bg-slate-950 px-3 py-1.5 border-b border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
+                              <span>{filteredComics.length} fumetti trovati per "{comicSearchQuery}"</span>
+                              <button 
+                                type="button"
+                                onClick={() => {
+                                  setSaleType('custom');
+                                  setCustomTitle(comicSearchQuery);
+                                  setIsDropdownOpen(false);
+                                }}
+                                className="text-[10px] text-indigo-400 hover:underline cursor-pointer"
+                              >
+                                Usa come fumetto esterno
+                              </button>
+                            </div>
+                            {filteredComics.length === 0 ? (
+                              <div className="p-3 text-center text-xs text-slate-400">
+                                Nessun fumetto trovato. Puoi cliccare su "Fumetto Non Registrato" in alto per vendere un fumetto esterno.
+                              </div>
+                            ) : (
+                              <div className="divide-y divide-slate-800/70">
+                                {filteredComics.slice(0, 20).map((comic: PurchasedComic) => {
+                                  const cover = getComicCoverUrl(comic);
+                                  return (
+                                    <div
+                                      key={comic.id}
+                                      onPointerDown={(e) => { e.preventDefault(); handleSelectComic(comic); }}
+                                      onClick={() => handleSelectComic(comic)}
+                                      className="p-2.5 flex items-center gap-3 cursor-pointer transition hover:bg-indigo-950/40"
+                                    >
+                                      <div className="w-7 h-10 shrink-0 bg-slate-950 rounded border border-slate-800 overflow-hidden flex items-center justify-center">
+                                        {cover ? (
+                                          <img 
+                                            src={cover} 
+                                            alt={comic.title} 
+                                            className="w-full h-full object-cover" 
+                                            onError={(e) => {
+                                              handleCoverError(e, comic, () => {
+                                                (e.currentTarget as HTMLElement).style.display = 'none';
+                                              });
+                                            }}
+                                          />
+                                        ) : (
+                                          <BookOpen className="w-3.5 h-3.5 text-slate-600" />
+                                        )}
+                                      </div>
+                                      <div className="min-w-0 flex-1">
+                                        <div className="text-xs font-semibold text-white truncate">{comic.title} {comic.issue_number ? `#${comic.issue_number}` : ''}</div>
+                                        <div className="text-[10px] text-slate-400 mt-0.5">
+                                          {comic.publisher_name || comic.category} • {comic.month} {comic.year} • {comic.purchase_price > 0 ? `Pagato ${comic.purchase_price.toFixed(2)} €` : ''} • {comic.status}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}

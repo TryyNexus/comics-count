@@ -182,6 +182,12 @@ export function App() {
     };
   }, [currentUser, currentYear, currentMonth]);
 
+  useEffect(() => {
+    if (currentUser && (activeTab === 'table' || activeTab === 'grid' || activeTab === 'dashboard')) {
+      loadComicsAndSummary();
+    }
+  }, [activeTab]);
+
   const loadPublishers = async () => {
     try {
       const data = await api.getPublishers();
@@ -666,12 +672,22 @@ export function App() {
 
         {/* View: Vendite */}
         {activeTab === 'sales' && (
-          <SalesView currentYear={currentYear} currentMonth={currentMonth} />
+          <SalesView 
+            currentYear={currentYear} 
+            currentMonth={currentMonth} 
+            onStatusChange={handleStatusChange}
+            onComicsRefresh={loadComicsAndSummary}
+          />
         )}
 
         {/* View: Diario Letture */}
         {activeTab === 'readings' && (
-          <ReadingsView currentYear={currentYear} currentMonth={currentMonth} />
+          <ReadingsView 
+            currentYear={currentYear} 
+            currentMonth={currentMonth} 
+            onStatusChange={handleStatusChange}
+            onComicsRefresh={loadComicsAndSummary}
+          />
         )}
       </main>
 
