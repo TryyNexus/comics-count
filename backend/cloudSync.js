@@ -21,6 +21,10 @@ let config = {
   db: null,
   dbPath: null,
   reopenDb: null,
+  replaceDbWithBuffer: null,
+  checkDatabaseHealth: null,
+  inspectSqliteBuffer: null,
+  serializeDatabase: null,
   coversDir: null
 };
 
@@ -31,7 +35,9 @@ let syncState = {
   lastSyncTime: null,
   lastSyncStatus: 'idle', // 'idle' | 'syncing' | 'success' | 'error'
   lastError: null,
-  syncPending: false
+  syncPending: false,
+  recoveredRevision: null,
+  dbStats: null
 };
 
 let debounceTimer = null;
@@ -147,14 +153,41 @@ async function supabaseUploadFile(remotePath, buffer, contentType = 'application
 
 /**
  * =========================================================================
- * GITHUB GIST IMPLEMENTATION
+ * GITHUB GIST IMPLEMENTATION (inclusa cronologia revisioni)
  * =========================================================================
  */
-async function githubDownloadGist() {
+async function extractBufferFromGistData(data, token) {
+  const fileObj = data && data.files && (data.files['comics_count.db.b64'] || data.files['comics_count.db']);
+  if (!fileObj) {
+    return null;
+  }
+
+  let base64Content = fileObj.content;
+  if ((fileObj.truncated || !base64Content) && fileObj.raw_url) {
+    const rawRes = await fetch(fileObj.raw_url, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'User-Agent': 'Comics-Count-Sync'
+      }
+    });
+    if (!rawRes.ok) {
+      throw new Error(`GitHub Gist raw_url fetch fallito [${rawRes.status}]`);
+    }
+    base64Content = await rawRes.text();
+  }
+
+  if (!base64Content) return null;
+  return Buffer.from(base64Content.trim(), 'base64');
+}
+
+async function githubDownloadGist(version = null) {
   const token = process.env.GITHUB_TOKEN;
   const gistId = process.env.GIST_ID;
+  const url = version
+    ? `https://api.github.com/gists/${gistId}/${version}`
+    : `https://api.github.com/gists/${gistId}`;
 
-  const res = await fetch(`https://api.github.com/gists/${gistId}`, {
+  const res = await fetch(url, {
     headers: {
       'Authorization': `Bearer ${token}`,
       'User-Agent': 'Comics-Count-Sync'
@@ -167,24 +200,26 @@ async function githubDownloadGist() {
   }
 
   const data = await res.json();
-  const fileObj = data.files && (data.files['comics_count.db.b64'] || data.files['comics_count.db']);
-  if (!fileObj) {
-    return null; // Il Gist esiste ma non contiene ancora il file
+  return extractBufferFromGistData(data, token);
+}
+
+async function githubGetGistCommits(perPage = 15) {
+  const token = process.env.GITHUB_TOKEN;
+  const gistId = process.env.GIST_ID;
+
+  const res = await fetch(`https://api.github.com/gists/${gistId}/commits?per_page=${perPage}`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'User-Agent': 'Comics-Count-Sync'
+    }
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`GitHub Gist commits fetch fallito [${res.status}]: ${errText}`);
   }
 
-  let base64Content = fileObj.content;
-  if (fileObj.truncated && fileObj.raw_url) {
-    const rawRes = await fetch(fileObj.raw_url, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'User-Agent': 'Comics-Count-Sync'
-      }
-    });
-    base64Content = await rawRes.text();
-  }
-
-  if (!base64Content) return null;
-  return Buffer.from(base64Content.trim(), 'base64');
+  return res.json();
 }
 
 async function githubUploadGist(buffer) {
@@ -224,6 +259,178 @@ function isValidSqliteBuffer(buf) {
   return buf.subarray(0, 16).toString('utf8') === 'SQLite format 3\0';
 }
 
+function validateBufferIntegrity(buf) {
+  if (!isValidSqliteBuffer(buf)) {
+    return { valid: false, error: 'Header SQLite non valido' };
+  }
+  const inspectFn = config.inspectSqliteBuffer || (config.db && config.db.inspectSqliteBuffer);
+  if (typeof inspectFn === 'function') {
+    return inspectFn(buf);
+  }
+  return { valid: true, sizeBytes: buf.length, comicsCount: 0, maxComicId: 0 };
+}
+
+/**
+ * Confronta due snapshot SQLite validi per determinare quale contiene i dati più completi/recenti.
+ * Restituisce > 0 se `cand` è migliore di `best`.
+ */
+function compareDatabaseSnapshots(cand, best) {
+  if (!best || !best.valid) return 1;
+  if (!cand || !cand.valid) return -1;
+
+  // Preferisci snapshot con più fumetti
+  if ((cand.comicsCount || 0) !== (best.comicsCount || 0)) {
+    return (cand.comicsCount || 0) - (best.comicsCount || 0);
+  }
+  // A parità di fumetti, preferisci maxComicId maggiore
+  if ((cand.maxComicId || 0) !== (best.maxComicId || 0)) {
+    return (cand.maxComicId || 0) - (best.maxComicId || 0);
+  }
+  // A parità, preferisci più vendite + letture
+  const candExtra = (cand.salesCount || 0) + (cand.readingsCount || 0);
+  const bestExtra = (best.salesCount || 0) + (best.readingsCount || 0);
+  if (candExtra !== bestExtra) {
+    return candExtra - bestExtra;
+  }
+  // A parità, preferisci maxUpdatedAt più recente
+  if (cand.maxUpdatedAt && best.maxUpdatedAt && cand.maxUpdatedAt !== best.maxUpdatedAt) {
+    return cand.maxUpdatedAt > best.maxUpdatedAt ? 1 : -1;
+  }
+  return 0;
+}
+
+/**
+ * Esamina la cronologia delle revisioni del Gist e restituisce i metadati di ciascuna versione.
+ */
+async function inspectGistRevisions(limit = 15) {
+  if (syncState.provider !== 'github') {
+    return [];
+  }
+  const commits = await githubGetGistCommits(limit);
+  const results = [];
+
+  for (const c of commits) {
+    try {
+      const buf = await githubDownloadGist(c.version);
+      const check = validateBufferIntegrity(buf);
+      results.push({
+        version: c.version,
+        committedAt: c.committed_at,
+        ...check
+      });
+    } catch (err) {
+      results.push({
+        version: c.version,
+        committedAt: c.committed_at,
+        valid: false,
+        error: err.message
+      });
+    }
+  }
+  return results;
+}
+
+/**
+ * Cerca nella versione corrente e nella cronologia del Gist la revisione SQLite integra più completa
+ * e la ripristina in modo atomico senza corruzione WAL.
+ */
+async function recoverBestGistDatabase(options = {}) {
+  const { targetVersion = null, commitsLimit = 12 } = options;
+
+  if (syncState.provider === 'github') {
+    if (targetVersion) {
+      const buf = await githubDownloadGist(targetVersion);
+      const check = validateBufferIntegrity(buf);
+      if (!check.valid) {
+        throw new Error(`La revisione richiesta (${targetVersion}) non è un database SQLite integro: ${check.error}`);
+      }
+      const replaceFn = config.replaceDbWithBuffer || (config.db && config.db.replaceDbWithBuffer);
+      const res = replaceFn ? replaceFn(buf) : { success: config.reopenDb(buf), ...check };
+      syncState.recoveredRevision = { version: targetVersion, ...check };
+      syncState.dbStats = check;
+      return res;
+    }
+
+    const commits = await githubGetGistCommits(commitsLimit);
+    let bestVersion = null;
+    let bestCommittedAt = null;
+    let bestBuffer = null;
+    let bestCheck = null;
+
+    for (let i = 0; i < commits.length; i++) {
+      const c = commits[i];
+      try {
+        const buf = await githubDownloadGist(c.version);
+        if (!buf) continue;
+        const check = validateBufferIntegrity(buf);
+        console.log(`[CloudSync] Revisione Gist #${i} (${c.version.slice(0, 8)} @ ${c.committed_at}): valid=${check.valid}, comics=${check.comicsCount ?? 'N/A'}, maxId=${check.maxComicId ?? 'N/A'}, maxUpdated=${check.maxUpdatedAt ?? 'N/A'}${check.error ? ' ERR=' + check.error : ''}`);
+
+        if (check.valid) {
+          if (!bestCheck || compareDatabaseSnapshots(check, bestCheck) > 0) {
+            bestVersion = c.version;
+            bestCommittedAt = c.committed_at;
+            bestBuffer = buf;
+            bestCheck = check;
+          }
+        }
+      } catch (err) {
+        console.warn(`[CloudSync] Errore controllo revisione ${c.version.slice(0, 8)}:`, err.message);
+      }
+    }
+
+    if (bestBuffer && bestCheck && bestCheck.valid) {
+      console.log(`[CloudSync] Selezionata migliore revisione Gist ${bestVersion.slice(0, 8)} (${bestCommittedAt}) con ${bestCheck.comicsCount} fumetti (maxId=${bestCheck.maxComicId}). Ripristino in corso...`);
+      const replaceFn = config.replaceDbWithBuffer || (config.db && config.db.replaceDbWithBuffer);
+      let replaceRes;
+      if (typeof replaceFn === 'function') {
+        replaceRes = replaceFn(bestBuffer);
+      } else {
+        fs.writeFileSync(config.dbPath, bestBuffer);
+        if (typeof config.reopenDb === 'function') config.reopenDb();
+        replaceRes = { success: true, ...bestCheck };
+      }
+
+      syncState.recoveredRevision = {
+        version: bestVersion,
+        committedAt: bestCommittedAt,
+        ...bestCheck
+      };
+      syncState.dbStats = bestCheck;
+      syncState.lastSyncTime = new Date().toISOString();
+      syncState.lastSyncStatus = 'success';
+      syncState.lastError = null;
+
+      // Se la revisione migliore non era l'ultima (es. l'ultima era corrotta), riallinea subito il Gist
+      if (commits.length > 0 && bestVersion !== commits[0].version) {
+        console.log(`[CloudSync] La revisione di testa (${commits[0].version.slice(0, 8)}) era corrotta o incompleta. Riallineo il Gist con la revisione sana ${bestVersion.slice(0, 8)}...`);
+        await syncDatabaseNow();
+      }
+
+      return replaceRes;
+    }
+
+    return { success: false, error: 'Nessuna revisione SQLite valida trovata nella cronologia Gist' };
+  }
+
+  if (syncState.provider === 'supabase') {
+    const cloudBuffer = await supabaseDownloadFile('comics_count.db');
+    if (cloudBuffer) {
+      const check = validateBufferIntegrity(cloudBuffer);
+      if (check.valid) {
+        const replaceFn = config.replaceDbWithBuffer || (config.db && config.db.replaceDbWithBuffer);
+        const replaceRes = typeof replaceFn === 'function' ? replaceFn(cloudBuffer) : { success: config.reopenDb(cloudBuffer), ...check };
+        syncState.dbStats = check;
+        syncState.lastSyncTime = new Date().toISOString();
+        syncState.lastSyncStatus = 'success';
+        return replaceRes;
+      }
+    }
+    return { success: false, error: 'Nessun backup Supabase valido trovato' };
+  }
+
+  return { success: false, error: 'Nessun provider configurato' };
+}
+
 /**
  * =========================================================================
  * CORE CLOUD SYNC LOGIC
@@ -232,7 +439,7 @@ function isValidSqliteBuffer(buf) {
 
 /**
  * Inizializza il modulo di Cloud Sync all'avvio del server.
- * Scarica il database più recente dal cloud prima dell'uso effettivo.
+ * Scarica il database più recente e integro dal cloud prima dell'uso effettivo.
  */
 async function initCloudSync(opts) {
   config = { ...config, ...opts };
@@ -246,30 +453,14 @@ async function initCloudSync(opts) {
   }
 
   console.log(`[CloudSync] Provider attivo: ${syncState.provider.toUpperCase()}.`);
-  console.log('[CloudSync] Controllo presenza backup remoto...');
+  console.log('[CloudSync] Controllo presenza backup remoto e verifica integrità...');
 
   try {
-    let cloudBuffer = null;
-    if (syncState.provider === 'supabase') {
-      cloudBuffer = await supabaseDownloadFile('comics_count.db');
-    } else if (syncState.provider === 'github') {
-      cloudBuffer = await githubDownloadGist();
-    }
-
-    if (cloudBuffer && isValidSqliteBuffer(cloudBuffer)) {
-      console.log(`[CloudSync] Trovato database valido nel cloud (${Math.round(cloudBuffer.length / 1024)} KB). Ripristino in corso...`);
-      // Salva il buffer su disco
-      fs.writeFileSync(config.dbPath, cloudBuffer);
-
-      // Riapre il database per caricare i nuovi dati
-      if (typeof config.reopenDb === 'function') {
-        config.reopenDb();
-      }
-      syncState.lastSyncTime = new Date().toISOString();
-      syncState.lastSyncStatus = 'success';
-      console.log('[CloudSync] Database ripristinato e sincronizzato con successo!');
+    const result = await recoverBestGistDatabase({ commitsLimit: 12 });
+    if (result && result.success) {
+      console.log(`[CloudSync] Database ripristinato e verificato con successo (${result.comicsCount} fumetti)!`);
     } else {
-      console.log('[CloudSync] Nessun database SQLite valido trovato nel cloud (o Gist inizializzato come testo). Eseguo upload del database locale reale...');
+      console.log('[CloudSync] Nessun database remoto valido trovato. Eseguo upload del database locale sano...');
       await syncDatabaseNow();
     }
   } catch (err) {
@@ -279,11 +470,40 @@ async function initCloudSync(opts) {
   }
 
   syncState.isInitialized = true;
+
+  // Protezione anti-SIGTERM durante il rolling deploy su Render:
+  // Il vecchio container viene terminato da Render 2-10 secondi dopo l'avvio del nuovo container
+  // e potrebbe caricare il suo DB corrotto su SIGTERM. Verifica dopo 15s e 35s che il Gist sia sano.
+  if (syncState.provider === 'github') {
+    const postDeployGuard = async (label) => {
+      try {
+        const latestBuf = await githubDownloadGist();
+        const latestCheck = validateBufferIntegrity(latestBuf);
+        const healthFn = config.checkDatabaseHealth || (config.db && config.db.checkDatabaseHealth);
+        const localHealth = typeof healthFn === 'function' ? healthFn() : { healthy: true };
+
+        if (!latestCheck.valid && localHealth.healthy) {
+          console.warn(`[CloudSync] [${label}] Rilevato Gist corrotto dal vecchio container in chiusura! Ripristino immediato del Gist dal DB locale sano...`);
+          await syncDatabaseNow();
+        } else if (latestCheck.valid && localHealth.healthy && (localHealth.comicsCount || 0) > (latestCheck.comicsCount || 0)) {
+          console.warn(`[CloudSync] [${label}] Il DB locale ha più fumetti (${localHealth.comicsCount}) rispetto all'ultimo Gist (${latestCheck.comicsCount}). Riallineo il Gist...`);
+          await syncDatabaseNow();
+        }
+      } catch (e) {
+        console.warn(`[CloudSync] [${label}] Errore controllo post-deploy:`, e.message);
+      }
+    };
+
+    setTimeout(() => postDeployGuard('Guard-15s'), 15000);
+    setTimeout(() => postDeployGuard('Guard-35s'), 35000);
+  }
+
   return true;
 }
 
 /**
- * Esegue immediatamente il checkpoint di SQLite e l'upload sul Cloud
+ * Esegue immediatamente l'esportazione sicura di SQLite e l'upload sul Cloud.
+ * Rifiuta categoricamente di caricare un database corrotto.
  */
 async function syncDatabaseNow() {
   if (syncState.provider === 'none') return;
@@ -298,17 +518,36 @@ async function syncDatabaseNow() {
   syncState.lastSyncStatus = 'syncing';
 
   try {
-    // 1. Forza la scrittura del WAL nel file principale comics_count.db
-    if (config.db && typeof config.db.pragma === 'function') {
-      try {
-        config.db.pragma('wal_checkpoint(TRUNCATE)');
-      } catch (walErr) {
-        console.warn('[CloudSync] Nota WAL checkpoint:', walErr.message);
+    // 1. Verifica rigorosa di integrità prima dell'upload
+    const healthFn = config.checkDatabaseHealth || (config.db && config.db.checkDatabaseHealth);
+    if (typeof healthFn === 'function') {
+      const health = healthFn();
+      if (!health.healthy) {
+        throw new Error(`Upload cloud bloccato per proteggere il backup: database locale corrotto (${health.error})`);
       }
+      syncState.dbStats = health;
     }
 
-    // 2. Leggi il file dal disco
-    const dbBuffer = fs.readFileSync(config.dbPath);
+    // 2. Esporta un buffer SQLite atomico e integro (senza dipendere da file -wal aperti)
+    let dbBuffer;
+    const serializeFn = config.serializeDatabase || (config.db && config.db.serializeDatabase);
+    if (typeof serializeFn === 'function') {
+      dbBuffer = serializeFn();
+    } else {
+      if (config.db && typeof config.db.pragma === 'function') {
+        try {
+          config.db.pragma('wal_checkpoint(TRUNCATE)');
+        } catch (walErr) {
+          console.warn('[CloudSync] Nota WAL checkpoint:', walErr.message);
+        }
+      }
+      dbBuffer = fs.readFileSync(config.dbPath);
+    }
+
+    const bufferCheck = validateBufferIntegrity(dbBuffer);
+    if (!bufferCheck.valid) {
+      throw new Error(`Upload cloud bloccato: il buffer generato non supera integrity_check (${bufferCheck.error})`);
+    }
 
     // 3. Esegui l'upload sul provider attivo
     if (syncState.provider === 'supabase') {
@@ -320,7 +559,8 @@ async function syncDatabaseNow() {
     syncState.lastSyncTime = new Date().toISOString();
     syncState.lastSyncStatus = 'success';
     syncState.lastError = null;
-    console.log(`[CloudSync] Modifiche sincronizzate su ${syncState.provider.toUpperCase()} (${Math.round(dbBuffer.length / 1024)} KB) alle ${new Date().toLocaleTimeString('it-IT')}.`);
+    syncState.dbStats = bufferCheck;
+    console.log(`[CloudSync] Modifiche sincronizzate su ${syncState.provider.toUpperCase()} (${Math.round(dbBuffer.length / 1024)} KB, ${bufferCheck.comicsCount} fumetti) alle ${new Date().toLocaleTimeString('it-IT')}.`);
   } catch (err) {
     console.error(`[CloudSync] Errore sincronizzazione su ${syncState.provider}:`, err.message);
     syncState.lastSyncStatus = 'error';
@@ -388,11 +628,14 @@ async function downloadCoverIfMissing(fileName) {
 }
 
 /**
- * Restituisce lo stato corrente della sincronizzazione
+ * Restituisce lo stato corrente della sincronizzazione e la salute del database locale
  */
 function getSyncStatus() {
+  const healthFn = config.checkDatabaseHealth || (config.db && config.db.checkDatabaseHealth);
+  const localHealth = typeof healthFn === 'function' ? healthFn() : null;
   return {
     ...syncState,
+    localHealth,
     dbPath: config.dbPath,
     hasDbFile: config.dbPath ? fs.existsSync(config.dbPath) : false
   };
@@ -404,5 +647,7 @@ module.exports = {
   scheduleSync,
   uploadCover,
   downloadCoverIfMissing,
-  getSyncStatus
+  getSyncStatus,
+  inspectGistRevisions,
+  recoverBestGistDatabase
 };

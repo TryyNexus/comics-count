@@ -1,6 +1,7 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const bcrypt = require('bcryptjs');
 
 // Cartella dei dati persistenti.
@@ -33,11 +34,86 @@ function isValidSqliteFile(filePath) {
   }
 }
 
+/**
+ * Ispettore sicuro su file temporaneo di un Buffer SQLite:
+ * verifica PRAGMA integrity_check e restituisce il conteggio dei fumetti e i timestamp più recenti.
+ */
+function inspectSqliteBuffer(buf) {
+  if (!buf || !Buffer.isBuffer(buf) || buf.length < 100) {
+    return { valid: false, error: 'Buffer vuoto o troppo piccolo' };
+  }
+  if (buf.subarray(0, 16).toString('utf8') !== 'SQLite format 3\0') {
+    return { valid: false, error: 'Header SQLite non valido' };
+  }
+
+  const tmpFile = path.join(os.tmpdir(), `cc_inspect_${Date.now()}_${Math.random().toString(36).slice(2)}.db`);
+  let tmpDb = null;
+  try {
+    fs.writeFileSync(tmpFile, buf);
+    tmpDb = new Database(tmpFile, { readonly: true });
+    const ic = tmpDb.pragma('integrity_check');
+    const isOk = Array.isArray(ic) && ic.length === 1 && ic[0].integrity_check === 'ok';
+    if (!isOk) {
+      return { valid: false, error: `Integrity check fallito: ${JSON.stringify(ic)}` };
+    }
+
+    const cRow = tmpDb.prepare('SELECT COUNT(*) as c, COALESCE(MAX(id), 0) as maxId, MAX(created_at) as maxCreated, MAX(updated_at) as maxUpdated FROM comics').get();
+    let salesCount = 0;
+    let readingsCount = 0;
+    let usersCount = 0;
+    try {
+      const sRow = tmpDb.prepare('SELECT COUNT(*) as c FROM sales_refunds').get();
+      salesCount = sRow ? sRow.c : 0;
+    } catch (e) {}
+    try {
+      const rRow = tmpDb.prepare('SELECT COUNT(*) as c FROM readings').get();
+      readingsCount = rRow ? rRow.c : 0;
+    } catch (e) {}
+    try {
+      const uRow = tmpDb.prepare('SELECT COUNT(*) as c FROM users').get();
+      usersCount = uRow ? uRow.c : 0;
+    } catch (e) {}
+
+    return {
+      valid: true,
+      sizeBytes: buf.length,
+      comicsCount: cRow ? cRow.c : 0,
+      maxComicId: cRow ? cRow.maxId : 0,
+      maxCreatedAt: cRow ? cRow.maxCreated : null,
+      maxUpdatedAt: cRow ? cRow.maxUpdated : null,
+      salesCount,
+      readingsCount,
+      usersCount
+    };
+  } catch (err) {
+    return { valid: false, error: err.message };
+  } finally {
+    try { if (tmpDb) tmpDb.close(); } catch (e) {}
+    try { if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile); } catch (e) {}
+    try { if (fs.existsSync(tmpFile + '-wal')) fs.unlinkSync(tmpFile + '-wal'); } catch (e) {}
+    try { if (fs.existsSync(tmpFile + '-shm')) fs.unlinkSync(tmpFile + '-shm'); } catch (e) {}
+  }
+}
+
+function removeWalFiles(targetDbPath) {
+  try {
+    if (fs.existsSync(targetDbPath + '-wal')) fs.unlinkSync(targetDbPath + '-wal');
+  } catch (e) {
+    console.warn(`[DB] Impossibile rimuovere ${targetDbPath}-wal:`, e.message);
+  }
+  try {
+    if (fs.existsSync(targetDbPath + '-shm')) fs.unlinkSync(targetDbPath + '-shm');
+  } catch (e) {
+    console.warn(`[DB] Impossibile rimuovere ${targetDbPath}-shm:`, e.message);
+  }
+}
+
 // Primo avvio o ripristino se corrotto: parte da una copia del database incluso nel repository
 const seedPath = path.join(__dirname, 'comics_count.db');
 if (fs.existsSync(seedPath)) {
   if (!fs.existsSync(dbPath) || !isValidSqliteFile(dbPath)) {
     if (path.resolve(seedPath) !== path.resolve(dbPath)) {
+      removeWalFiles(dbPath);
       fs.copyFileSync(seedPath, dbPath);
       console.log(`[DB] Database valido ripristinato da seed in ${dbPath}`);
     }
@@ -48,26 +124,96 @@ console.log(`[DB] Uso database: ${dbPath}`);
 let currentDb;
 try {
   currentDb = new Database(dbPath);
+  const ic = currentDb.pragma('integrity_check');
+  const isOk = Array.isArray(ic) && ic.length === 1 && ic[0].integrity_check === 'ok';
+  if (!isOk) {
+    throw new Error('Integrity check fallito all\'avvio');
+  }
 } catch (dbErr) {
-  console.warn(`[DB] Errore apertura ${dbPath} (${dbErr.message}). Tentativo ripristino da seed...`);
+  console.warn(`[DB] Errore apertura ${dbPath} (${dbErr.message}). Pulizia WAL e nuovo tentativo...`);
+  try { if (currentDb) currentDb.close(); } catch (e) {}
+  removeWalFiles(dbPath);
   if (fs.existsSync(seedPath) && path.resolve(seedPath) !== path.resolve(dbPath)) {
     fs.copyFileSync(seedPath, dbPath);
-    currentDb = new Database(dbPath);
-  } else {
-    throw dbErr;
   }
+  currentDb = new Database(dbPath);
 }
 currentDb.pragma('journal_mode = WAL');
 currentDb.pragma('foreign_keys = ON');
 
-function reopenDb() {
+function checkDatabaseHealth() {
+  try {
+    if (!currentDb) return { healthy: false, error: 'Database non aperto' };
+    const ic = currentDb.pragma('integrity_check');
+    const isOk = Array.isArray(ic) && ic.length === 1 && ic[0].integrity_check === 'ok';
+    if (!isOk) {
+      return { healthy: false, error: `Integrity check: ${JSON.stringify(ic)}` };
+    }
+    const cRow = currentDb.prepare('SELECT COUNT(*) as c, COALESCE(MAX(id), 0) as maxId, MAX(created_at) as maxCreated, MAX(updated_at) as maxUpdated FROM comics').get();
+    return {
+      healthy: true,
+      comicsCount: cRow ? cRow.c : 0,
+      maxComicId: cRow ? cRow.maxId : 0,
+      maxCreatedAt: cRow ? cRow.maxCreated : null,
+      maxUpdatedAt: cRow ? cRow.maxUpdated : null
+    };
+  } catch (err) {
+    return { healthy: false, error: err.message };
+  }
+}
+
+/**
+ * Sostituisce il database attivo con un buffer SQLite verificato in modo sicuro:
+ * 1. Verifica che il buffer sia integro PRIMA di toccare il disco
+ * 2. Chiude la connessione corrente SENZA eseguire wal_checkpoint (che sovrascriverebbe il nuovo file con vecchie pagine WAL!)
+ * 3. Elimina i file -wal e -shm residui
+ * 4. Scrive il nuovo buffer e riapre la connessione
+ */
+function replaceDbWithBuffer(cloudBuffer) {
+  const check = inspectSqliteBuffer(cloudBuffer);
+  if (!check.valid) {
+    console.error(`[DB] Sostituzione database annullata: buffer non valido (${check.error})`);
+    return { success: false, error: check.error };
+  }
+
   try {
     if (currentDb) {
       try {
-        currentDb.pragma('wal_checkpoint(TRUNCATE)');
         currentDb.close();
       } catch (e) {}
+      currentDb = null;
     }
+    removeWalFiles(dbPath);
+    fs.writeFileSync(dbPath, cloudBuffer);
+    removeWalFiles(dbPath);
+
+    currentDb = new Database(dbPath);
+    currentDb.pragma('journal_mode = WAL');
+    currentDb.pragma('foreign_keys = ON');
+    initDatabase();
+
+    const health = checkDatabaseHealth();
+    console.log(`[DB] Database sostituito e ricaricato con successo (${check.comicsCount} fumetti, maxId=${check.maxComicId})`);
+    return { success: health.healthy, ...check, health };
+  } catch (err) {
+    console.error(`[DB] Errore critico durante replaceDbWithBuffer:`, err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+function reopenDb(newBuffer = null) {
+  if (newBuffer && Buffer.isBuffer(newBuffer)) {
+    return replaceDbWithBuffer(newBuffer).success;
+  }
+  try {
+    if (currentDb) {
+      try {
+        // NON eseguire wal_checkpoint qui se il file dbPath è stato appena sovrascritto dall'esterno!
+        currentDb.close();
+      } catch (e) {}
+      currentDb = null;
+    }
+    removeWalFiles(dbPath);
     currentDb = new Database(dbPath);
     currentDb.pragma('journal_mode = WAL');
     currentDb.pragma('foreign_keys = ON');
@@ -80,9 +226,32 @@ function reopenDb() {
   }
 }
 
+function serializeDatabase() {
+  const health = checkDatabaseHealth();
+  if (!health.healthy) {
+    throw new Error(`Esportazione bloccata: database locale non integro (${health.error})`);
+  }
+  let buf;
+  if (typeof currentDb.serialize === 'function') {
+    buf = currentDb.serialize();
+  } else {
+    currentDb.pragma('wal_checkpoint(TRUNCATE)');
+    buf = fs.readFileSync(dbPath);
+  }
+  const check = inspectSqliteBuffer(buf);
+  if (!check.valid) {
+    throw new Error(`Buffer serializzato non valido: ${check.error}`);
+  }
+  return buf;
+}
+
 const db = new Proxy({}, {
   get(target, prop) {
     if (prop === 'reopenDb') return reopenDb;
+    if (prop === 'replaceDbWithBuffer') return replaceDbWithBuffer;
+    if (prop === 'checkDatabaseHealth') return checkDatabaseHealth;
+    if (prop === 'inspectSqliteBuffer') return inspectSqliteBuffer;
+    if (prop === 'serializeDatabase') return serializeDatabase;
     if (prop === 'dbPath') return dbPath;
     if (prop === '_rawDb') return currentDb;
     const val = currentDb[prop];
@@ -276,5 +445,14 @@ function initDatabase() {
 
 initDatabase();
 
-module.exports = { db, initDatabase, reopenDb, dbPath, DATA_DIR };
-
+module.exports = {
+  db,
+  initDatabase,
+  reopenDb,
+  replaceDbWithBuffer,
+  checkDatabaseHealth,
+  inspectSqliteBuffer,
+  serializeDatabase,
+  dbPath,
+  DATA_DIR
+};

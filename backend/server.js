@@ -5,7 +5,16 @@ const fs = require('fs');
 const os = require('os');
 const multer = require('multer');
 const bcrypt = require('bcryptjs');
-const { db, DATA_DIR, reopenDb, dbPath } = require('./db');
+const {
+  db,
+  DATA_DIR,
+  reopenDb,
+  replaceDbWithBuffer,
+  checkDatabaseHealth,
+  inspectSqliteBuffer,
+  serializeDatabase,
+  dbPath
+} = require('./db');
 const { authMiddleware, generateToken } = require('./auth');
 const { importExcel, findOneDriveExcelPath } = require('./excelImporter');
 const { exportToExcel, exportToJson } = require('./excelExporter');
@@ -17,7 +26,9 @@ const {
   syncDatabaseNow,
   uploadCover,
   downloadCoverIfMissing,
-  getSyncStatus
+  getSyncStatus,
+  inspectGistRevisions,
+  recoverBestGistDatabase
 } = require('./cloudSync');
 
 const app = express();
@@ -140,6 +151,27 @@ function broadcastSyncEvent(userId, eventType, data = {}) {
 // -------------------------------------------------------------
 app.get('/api/cloud-sync/status', (req, res) => {
   res.json(getSyncStatus());
+});
+
+app.get('/api/cloud-sync/revisions', async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 15, 1), 30);
+    const revisions = await inspectGistRevisions(limit);
+    res.json({ revisions, status: getSyncStatus() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/cloud-sync/recover', async (req, res) => {
+  try {
+    const targetVersion = req.body && req.body.version ? String(req.body.version).trim() : null;
+    const commitsLimit = Math.min(Math.max(Number(req.body && req.body.limit) || 15, 1), 30);
+    const result = await recoverBestGistDatabase({ targetVersion, commitsLimit });
+    res.json({ result, status: getSyncStatus() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post('/api/cloud-sync/sync-now', async (req, res) => {
@@ -1507,6 +1539,10 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
       db,
       dbPath,
       reopenDb,
+      replaceDbWithBuffer,
+      checkDatabaseHealth,
+      inspectSqliteBuffer,
+      serializeDatabase,
       coversDir: COVERS_DIR
     });
   } catch (e) {
@@ -1520,11 +1556,16 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
   }).catch(e => console.error('[Tunnel] Errore:', e.message));
 });
 
-// Chiusura pulita: esegue il salvataggio finale sul Cloud e il checkpoint del WAL
+// Chiusura pulita: esegue il salvataggio finale sul Cloud solo se il database è integro
 async function shutdown() {
-  console.log('[Server] Ricevuto segnale di arresto, salvataggio finale nel cloud...');
+  console.log('[Server] Ricevuto segnale di arresto, verifica integrità database prima del salvataggio finale...');
   try {
-    await syncDatabaseNow();
+    const health = checkDatabaseHealth();
+    if (health && health.healthy) {
+      await syncDatabaseNow();
+    } else {
+      console.warn('[Server] Database locale non integro, salto salvataggio cloud in chiusura per proteggere il backup.');
+    }
   } catch (e) {
     console.warn('[CloudSync] Errore salvataggio finale:', e.message);
   }
