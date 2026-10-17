@@ -150,16 +150,334 @@ function checkDatabaseHealth() {
       return { healthy: false, error: `Integrity check: ${JSON.stringify(ic)}` };
     }
     const cRow = currentDb.prepare('SELECT COUNT(*) as c, COALESCE(MAX(id), 0) as maxId, MAX(created_at) as maxCreated, MAX(updated_at) as maxUpdated FROM comics').get();
+    let usersSummary = [];
+    try {
+      usersSummary = currentDb.prepare(`
+        SELECT u.id, u.username, u.email, u.display_name, u.created_at,
+          (SELECT COUNT(*) FROM comics c WHERE c.user_id = u.id) as comicsCount,
+          (SELECT COUNT(*) FROM sales_refunds s WHERE s.user_id = u.id) as salesCount,
+          (SELECT COUNT(*) FROM readings r WHERE r.user_id = u.id) as readingsCount
+        FROM users u
+      `).all();
+    } catch (e) {}
     return {
       healthy: true,
       comicsCount: cRow ? cRow.c : 0,
       maxComicId: cRow ? cRow.maxId : 0,
       maxCreatedAt: cRow ? cRow.maxCreated : null,
-      maxUpdatedAt: cRow ? cRow.maxUpdated : null
+      maxUpdatedAt: cRow ? cRow.maxUpdated : null,
+      usersSummary
     };
   } catch (err) {
     return { healthy: false, error: err.message };
   }
+}
+
+function readVarint(buf, offset) {
+  let val = 0;
+  for (let i = 0; i < 8; i++) {
+    const b = buf[offset + i];
+    val = (val * 128) + (b & 0x7f);
+    if ((b & 0x80) === 0) return { val, len: i + 1 };
+  }
+  const b = buf[offset + 8];
+  val = (val * 256) + b;
+  return { val, len: 9 };
+}
+
+function decodeSerialValue(buf, offset, st) {
+  if (st === 0) return { val: null, len: 0 };
+  if (st === 1) return { val: buf.readInt8(offset), len: 1 };
+  if (st === 2) return { val: buf.readInt16BE(offset), len: 2 };
+  if (st === 3) {
+    let v = (buf[offset] << 16) | (buf[offset + 1] << 8) | buf[offset + 2];
+    if (v & 0x800000) v |= 0xff000000;
+    return { val: v, len: 3 };
+  }
+  if (st === 4) return { val: buf.readInt32BE(offset), len: 4 };
+  if (st === 5) return { val: Number(buf.readBigInt64BE(offset - 2) & 0xffffffffffffn), len: 6 };
+  if (st === 6) return { val: Number(buf.readBigInt64BE(offset)), len: 8 };
+  if (st === 7) return { val: buf.readDoubleBE(offset), len: 8 };
+  if (st === 8) return { val: 0, len: 0 };
+  if (st === 9) return { val: 1, len: 0 };
+  if (st >= 12 && st % 2 === 0) {
+    const len = (st - 12) / 2;
+    return { val: buf.subarray(offset, offset + len), len };
+  }
+  if (st >= 13 && st % 2 === 1) {
+    const len = (st - 13) / 2;
+    return { val: buf.subarray(offset, offset + len).toString('utf8'), len };
+  }
+  return { val: null, len: 0 };
+}
+
+/**
+ * Estrae tutti i record leggibili anche da un buffer SQLite parzialmente corrotto,
+ * combinando scansioni per indice primario (ASC/DESC/point lookup) e carving diretto delle pagine foglia B-Tree (0x0d).
+ */
+function salvageFromBuffer(buf) {
+  const tables = {
+    users: new Map(),
+    publishers: new Map(),
+    comics: new Map(),
+    sales_refunds: new Map(),
+    readings: new Map(),
+    orders: new Map()
+  };
+
+  if (!buf || !Buffer.isBuffer(buf) || buf.length < 100) {
+    return { users: [], publishers: [], comics: [], sales_refunds: [], readings: [], orders: [] };
+  }
+
+  const tmpFile = path.join(os.tmpdir(), `cc_salvage_${Date.now()}_${Math.random().toString(36).slice(2)}.db`);
+  let tmpDb = null;
+  try {
+    fs.writeFileSync(tmpFile, buf);
+    tmpDb = new Database(tmpFile, { readonly: true });
+
+    const tableMaxIds = {
+      users: 100,
+      publishers: 100,
+      comics: 3000,
+      sales_refunds: 500,
+      readings: 500,
+      orders: 500
+    };
+
+    for (const [tName, maxId] of Object.entries(tableMaxIds)) {
+      const map = tables[tName];
+      // 1. Scansione inversa (parte dalle righe più recenti alla fine del B-Tree)
+      try {
+        const stmt = tmpDb.prepare(`SELECT * FROM ${tName} ORDER BY id DESC`);
+        for (const row of stmt.iterate()) {
+          if (row && row.id != null) map.set(row.id, row);
+        }
+      } catch (e) {}
+
+      // 2. Scansione diretta (parte dalle prime righe all'inizio del B-Tree)
+      try {
+        const stmt = tmpDb.prepare(`SELECT * FROM ${tName} ORDER BY id ASC`);
+        for (const row of stmt.iterate()) {
+          if (row && row.id != null) map.set(row.id, row);
+        }
+      } catch (e) {}
+
+      // 3. Point lookup per singolo ID
+      let getByIdStmt = null;
+      try {
+        getByIdStmt = tmpDb.prepare(`SELECT * FROM ${tName} WHERE id = ?`);
+      } catch (e) {}
+
+      if (getByIdStmt) {
+        for (let id = 1; id <= maxId; id++) {
+          if (map.has(id)) continue;
+          try {
+            const row = getByIdStmt.get(id);
+            if (row && row.id != null) map.set(row.id, row);
+          } catch (e) {}
+        }
+      }
+    }
+  } catch (e) {
+    // Continua con il carving diretto delle pagine
+  } finally {
+    try { if (tmpDb) tmpDb.close(); } catch (e) {}
+    try { if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile); } catch (e) {}
+    try { if (fs.existsSync(tmpFile + '-wal')) fs.unlinkSync(tmpFile + '-wal'); } catch (e) {}
+    try { if (fs.existsSync(tmpFile + '-shm')) fs.unlinkSync(tmpFile + '-shm'); } catch (e) {}
+  }
+
+  // 4. Carving diretto a basso livello dalle pagine foglia B-Tree (0x0d)
+  try {
+    let pageSize = buf.readUInt16BE(16);
+    if (pageSize === 1) pageSize = 65536;
+    const usableSize = pageSize - buf.readUInt8(20);
+    const maxLocal = usableSize - 35;
+    const numPages = Math.floor(buf.length / pageSize);
+
+    const legacyComicCols = [
+      'id', 'title', 'series', 'issue_number', 'variant_info', 'publisher_id',
+      'year', 'month', 'release_date', 'purchase_date', 'cover_price', 'purchase_price',
+      'isbn', 'ean', 'upc', 'cover_url', 'local_cover_path', 'status',
+      'channel', 'notes', 'created_at', 'updated_at', 'user_id'
+    ];
+    const freshComicCols = [
+      'id', 'user_id', 'title', 'series', 'issue_number', 'variant_info', 'publisher_id',
+      'year', 'month', 'release_date', 'purchase_date', 'cover_price', 'purchase_price',
+      'isbn', 'ean', 'upc', 'cover_url', 'local_cover_path', 'status',
+      'channel', 'notes', 'created_at', 'updated_at'
+    ];
+
+    for (let p = 0; p < numPages; p++) {
+      const pageOff = p * pageSize;
+      const hdrOff = p === 0 ? 100 : 0;
+      if (buf[pageOff + hdrOff] !== 0x0d) continue;
+      const cellCount = buf.readUInt16BE(pageOff + hdrOff + 3);
+
+      for (let c = 0; c < cellCount; c++) {
+        try {
+          const cellPtr = buf.readUInt16BE(pageOff + hdrOff + 8 + c * 2);
+          if (cellPtr === 0 || pageOff + cellPtr >= buf.length) continue;
+          let pos = pageOff + cellPtr;
+          const pSize = readVarint(buf, pos); pos += pSize.len;
+          if (pSize.val > maxLocal) continue; // Salta record con overflow multi-pagina già letti via SQL
+          const rowId = readVarint(buf, pos); pos += rowId.len;
+          const hdrStart = pos;
+          const hdrSize = readVarint(buf, pos); pos += hdrSize.len;
+          if (hdrSize.val <= 0 || hdrSize.val > 500) continue;
+
+          const serialTypes = [];
+          while (pos < hdrStart + hdrSize.val && pos < buf.length) {
+            const st = readVarint(buf, pos);
+            serialTypes.push(st.val);
+            pos += st.len;
+          }
+
+          const vals = [];
+          for (const st of serialTypes) {
+            const dec = decodeSerialValue(buf, pos, st);
+            vals.push(dec.val);
+            pos += dec.len;
+          }
+
+          // Caso comics (23 colonne)
+          if (serialTypes.length === 23 && !tables.comics.has(rowId.val)) {
+            const cols = typeof vals[1] === 'string' ? legacyComicCols : freshComicCols;
+            const obj = {};
+            for (let k = 0; k < 23; k++) {
+              obj[cols[k]] = k === 0 ? rowId.val : vals[k];
+            }
+            if (obj.title && typeof obj.title === 'string') {
+              tables.comics.set(rowId.val, obj);
+            }
+          }
+          // Caso users (6 colonne con hash bcrypt)
+          else if (serialTypes.length === 6 && !tables.users.has(rowId.val)) {
+            if (typeof vals[1] === 'string' && typeof vals[3] === 'string' && vals[3].startsWith('$2')) {
+              tables.users.set(rowId.val, {
+                id: rowId.val,
+                username: vals[1],
+                email: vals[2],
+                password_hash: vals[3],
+                display_name: vals[4],
+                created_at: vals[5]
+              });
+            }
+          }
+        } catch (cellErr) {}
+      }
+    }
+  } catch (carveErr) {}
+
+  return {
+    users: Array.from(tables.users.values()),
+    publishers: Array.from(tables.publishers.values()),
+    comics: Array.from(tables.comics.values()),
+    sales_refunds: Array.from(tables.sales_refunds.values()),
+    readings: Array.from(tables.readings.values()),
+    orders: Array.from(tables.orders.values())
+  };
+}
+
+/**
+ * Unisce nel database corrente eventuali righe recuperate da revisioni successive (anche se parzialmente corrotte).
+ */
+function mergeSalvagedIntoDb(salvaged) {
+  if (!currentDb || !salvaged) return { addedComics: 0, updatedComics: 0, addedUsers: 0, addedSales: 0, addedReadings: 0 };
+
+  let addedComics = 0;
+  let updatedComics = 0;
+  let addedUsers = 0;
+  let addedSales = 0;
+  let addedReadings = 0;
+
+  try {
+    currentDb.pragma('foreign_keys = OFF');
+    const tx = currentDb.transaction(() => {
+      // 1. Users
+      if (Array.isArray(salvaged.users)) {
+        for (const u of salvaged.users) {
+          if (!u || !u.id || !u.username || !u.password_hash) continue;
+          const ex = currentDb.prepare('SELECT id FROM users WHERE id = ? OR username = ? COLLATE NOCASE').get(u.id, u.username);
+          if (!ex) {
+            currentDb.prepare('INSERT INTO users (id, username, email, password_hash, display_name, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+              .run(u.id, u.username, u.email || null, u.password_hash, u.display_name || u.username, u.created_at || new Date().toISOString());
+            addedUsers++;
+          }
+        }
+      }
+
+      // 2. Publishers
+      if (Array.isArray(salvaged.publishers)) {
+        for (const p of salvaged.publishers) {
+          if (!p || !p.id || !p.name) continue;
+          currentDb.prepare('INSERT OR IGNORE INTO publishers (id, name, color, description) VALUES (?, ?, ?, ?)')
+            .run(p.id, p.name, p.color || '#6366f1', p.description || null);
+        }
+      }
+
+      // 3. Comics
+      if (Array.isArray(salvaged.comics)) {
+        const comicCols = currentDb.prepare('PRAGMA table_info(comics)').all().map(c => c.name);
+        for (const c of salvaged.comics) {
+          if (!c || !c.id || !c.title) continue;
+          const ex = currentDb.prepare('SELECT id, updated_at FROM comics WHERE id = ?').get(c.id);
+          if (!ex) {
+            const validKeys = comicCols.filter(k => c[k] !== undefined);
+            const placeholders = validKeys.map(() => '?').join(', ');
+            currentDb.prepare(`INSERT INTO comics (${validKeys.join(', ')}) VALUES (${placeholders})`)
+              .run(...validKeys.map(k => c[k]));
+            addedComics++;
+          } else if (c.updated_at && (!ex.updated_at || c.updated_at > ex.updated_at)) {
+            const validKeys = comicCols.filter(k => c[k] !== undefined);
+            const placeholders = validKeys.map(() => '?').join(', ');
+            currentDb.prepare(`INSERT OR REPLACE INTO comics (${validKeys.join(', ')}) VALUES (${placeholders})`)
+              .run(...validKeys.map(k => c[k]));
+            updatedComics++;
+          }
+        }
+      }
+
+      // 4. Sales
+      if (Array.isArray(salvaged.sales_refunds)) {
+        const salesCols = currentDb.prepare('PRAGMA table_info(sales_refunds)').all().map(c => c.name);
+        for (const s of salvaged.sales_refunds) {
+          if (!s || !s.id || !s.title) continue;
+          const ex = currentDb.prepare('SELECT id FROM sales_refunds WHERE id = ?').get(s.id);
+          if (!ex) {
+            const validKeys = salesCols.filter(k => s[k] !== undefined);
+            const placeholders = validKeys.map(() => '?').join(', ');
+            currentDb.prepare(`INSERT INTO sales_refunds (${validKeys.join(', ')}) VALUES (${placeholders})`)
+              .run(...validKeys.map(k => s[k]));
+            addedSales++;
+          }
+        }
+      }
+
+      // 5. Readings
+      if (Array.isArray(salvaged.readings)) {
+        const readCols = currentDb.prepare('PRAGMA table_info(readings)').all().map(c => c.name);
+        for (const r of salvaged.readings) {
+          if (!r || !r.id || !r.title) continue;
+          const ex = currentDb.prepare('SELECT id FROM readings WHERE id = ?').get(r.id);
+          if (!ex) {
+            const validKeys = readCols.filter(k => r[k] !== undefined);
+            const placeholders = validKeys.map(() => '?').join(', ');
+            currentDb.prepare(`INSERT INTO readings (${validKeys.join(', ')}) VALUES (${placeholders})`)
+              .run(...validKeys.map(k => r[k]));
+            addedReadings++;
+          }
+        }
+      }
+    });
+    tx();
+  } catch (err) {
+    console.error('[DB] Errore durante mergeSalvagedIntoDb:', err.message);
+  } finally {
+    try { currentDb.pragma('foreign_keys = ON'); } catch (e) {}
+  }
+
+  return { addedComics, updatedComics, addedUsers, addedSales, addedReadings };
 }
 
 /**
@@ -252,6 +570,8 @@ const db = new Proxy({}, {
     if (prop === 'checkDatabaseHealth') return checkDatabaseHealth;
     if (prop === 'inspectSqliteBuffer') return inspectSqliteBuffer;
     if (prop === 'serializeDatabase') return serializeDatabase;
+    if (prop === 'salvageFromBuffer') return salvageFromBuffer;
+    if (prop === 'mergeSalvagedIntoDb') return mergeSalvagedIntoDb;
     if (prop === 'dbPath') return dbPath;
     if (prop === '_rawDb') return currentDb;
     const val = currentDb[prop];
@@ -453,6 +773,9 @@ module.exports = {
   checkDatabaseHealth,
   inspectSqliteBuffer,
   serializeDatabase,
+  salvageFromBuffer,
+  mergeSalvagedIntoDb,
   dbPath,
   DATA_DIR
 };
+

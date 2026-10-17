@@ -335,7 +335,7 @@ async function inspectGistRevisions(limit = 15) {
  * e la ripristina in modo atomico senza corruzione WAL.
  */
 async function recoverBestGistDatabase(options = {}) {
-  const { targetVersion = null, commitsLimit = 12 } = options;
+  const { targetVersion = null, commitsLimit = 25, salvageCorrupted = true } = options;
 
   if (syncState.provider === 'github') {
     if (targetVersion) {
@@ -356,6 +356,7 @@ async function recoverBestGistDatabase(options = {}) {
     let bestCommittedAt = null;
     let bestBuffer = null;
     let bestCheck = null;
+    const candidatesForSalvage = [];
 
     for (let i = 0; i < commits.length; i++) {
       const c = commits[i];
@@ -372,6 +373,12 @@ async function recoverBestGistDatabase(options = {}) {
             bestBuffer = buf;
             bestCheck = check;
           }
+          // Tieni anche il primo commit valido se diverso da bestVersion per unire eventuali vendite/letture recenti
+          if (i < 4) {
+            candidatesForSalvage.push({ version: c.version, committedAt: c.committed_at, buf, valid: true });
+          }
+        } else {
+          candidatesForSalvage.push({ version: c.version, committedAt: c.committed_at, buf, valid: false });
         }
       } catch (err) {
         console.warn(`[CloudSync] Errore controllo revisione ${c.version.slice(0, 8)}:`, err.message);
@@ -390,23 +397,57 @@ async function recoverBestGistDatabase(options = {}) {
         replaceRes = { success: true, ...bestCheck };
       }
 
+      // Recupero (salvage) di eventuali righe aggiunte nelle revisioni successive anche se parzialmente corrotte
+      let totalSalvaged = { addedComics: 0, updatedComics: 0, addedUsers: 0, addedSales: 0, addedReadings: 0 };
+      const salvageFn = config.salvageFromBuffer || (config.db && config.db.salvageFromBuffer);
+      const mergeFn = config.mergeSalvagedIntoDb || (config.db && config.db.mergeSalvagedIntoDb);
+
+      if (salvageCorrupted && typeof salvageFn === 'function' && typeof mergeFn === 'function' && candidatesForSalvage.length > 0) {
+        // Ordine cronologico dal più vecchio al più recente
+        const ordered = candidatesForSalvage
+          .filter(item => item.version !== bestVersion)
+          .slice()
+          .reverse();
+
+        for (const item of ordered) {
+          try {
+            const salvaged = salvageFn(item.buf);
+            const mRes = mergeFn(salvaged);
+            totalSalvaged.addedComics += mRes.addedComics || 0;
+            totalSalvaged.updatedComics += mRes.updatedComics || 0;
+            totalSalvaged.addedUsers += mRes.addedUsers || 0;
+            totalSalvaged.addedSales += mRes.addedSales || 0;
+            totalSalvaged.addedReadings += mRes.addedReadings || 0;
+            if (mRes.addedComics > 0 || mRes.addedUsers > 0 || mRes.addedSales > 0 || mRes.addedReadings > 0) {
+              console.log(`[CloudSync] Salvage da ${item.version.slice(0, 8)} (${item.committedAt}): +${mRes.addedComics} fumetti, +${mRes.addedUsers} utenti, +${mRes.addedSales} vendite, +${mRes.addedReadings} letture`);
+            }
+          } catch (sErr) {
+            console.warn(`[CloudSync] Avviso salvage su ${item.version.slice(0, 8)}:`, sErr.message);
+          }
+        }
+      }
+
+      const healthFn = config.checkDatabaseHealth || (config.db && config.db.checkDatabaseHealth);
+      const finalHealth = typeof healthFn === 'function' ? healthFn() : bestCheck;
+
       syncState.recoveredRevision = {
         version: bestVersion,
         committedAt: bestCommittedAt,
-        ...bestCheck
+        salvaged: totalSalvaged,
+        ...finalHealth
       };
-      syncState.dbStats = bestCheck;
+      syncState.dbStats = finalHealth;
       syncState.lastSyncTime = new Date().toISOString();
       syncState.lastSyncStatus = 'success';
       syncState.lastError = null;
 
-      // Se la revisione migliore non era l'ultima (es. l'ultima era corrotta), riallinea subito il Gist
-      if (commits.length > 0 && bestVersion !== commits[0].version) {
-        console.log(`[CloudSync] La revisione di testa (${commits[0].version.slice(0, 8)}) era corrotta o incompleta. Riallineo il Gist con la revisione sana ${bestVersion.slice(0, 8)}...`);
+      // Se la revisione migliore non era l'ultima o abbiamo recuperato righe extra, riallinea subito il Gist
+      if ((commits.length > 0 && bestVersion !== commits[0].version) || totalSalvaged.addedComics > 0 || totalSalvaged.addedSales > 0) {
+        console.log(`[CloudSync] Riallineo il Gist con il database completo e risanato...`);
         await syncDatabaseNow();
       }
 
-      return replaceRes;
+      return { ...replaceRes, salvaged: totalSalvaged, finalHealth };
     }
 
     return { success: false, error: 'Nessuna revisione SQLite valida trovata nella cronologia Gist' };
@@ -456,7 +497,7 @@ async function initCloudSync(opts) {
   console.log('[CloudSync] Controllo presenza backup remoto e verifica integrità...');
 
   try {
-    const result = await recoverBestGistDatabase({ commitsLimit: 12 });
+    const result = await recoverBestGistDatabase({ commitsLimit: 25, salvageCorrupted: true });
     if (result && result.success) {
       console.log(`[CloudSync] Database ripristinato e verificato con successo (${result.comicsCount} fumetti)!`);
     } else {
